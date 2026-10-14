@@ -127,15 +127,23 @@ pub const PLUGINS: [&str; 21] = [
 pub const SCREEN_PLUGINS: [&str; 2] = ["svtav1", "nvcodec"];
 
 /// The audio sinks `autoaudiosink` picks from on Windows, the screen capture
-/// source (`d3d11screencapturesrc`), and the AMD and Intel AV1 encoders
-/// (`amfav1enc`, `qsvav1enc`); besides [`PLUGINS`] and [`SCREEN_PLUGINS`].
-pub const WINDOWS_PLUGINS: [&str; 5] = ["wasapi2", "directsound", "d3d11", "amfcodec", "qsv"];
-/// The audio sink and the screen share's encoder (`svtav1enc`) on macOS,
-/// besides [`PLUGINS`].
-pub const MACOS_PLUGINS: [&str; 2] = ["osxaudio", "svtav1"];
+/// source (`d3d11screencapturesrc`), the capture devices (`mfvideosrc`), and
+/// the AMD and Intel AV1 encoders (`amfav1enc`, `qsvav1enc`); besides
+/// [`PLUGINS`] and [`SCREEN_PLUGINS`].
+pub const WINDOWS_PLUGINS: [&str; 6] = [
+    "wasapi2",
+    "directsound",
+    "d3d11",
+    "amfcodec",
+    "qsv",
+    "mediafoundation",
+];
+/// The audio sink, the capture devices (`avfvideosrc`) and the screen share's
+/// encoder (`svtav1enc`) on macOS, besides [`PLUGINS`].
+pub const MACOS_PLUGINS: [&str; 3] = ["osxaudio", "svtav1", "applemedia"];
 
 /// The FFmpeg components gst-libav uses; every other FFmpeg feature is off.
-pub const FFMPEG_OPTIONS: [&str; 17] = [
+pub const FFMPEG_OPTIONS: [&str; 18] = [
     "avcodec=enabled",
     "avformat=enabled",
     "avfilter=enabled",
@@ -150,6 +158,10 @@ pub const FFMPEG_OPTIONS: [&str; 17] = [
     "h264_decoder=enabled",
     "vp9_decoder=enabled",
     "aac_decoder=enabled",
+    // `avdec_mjpeg`, for capture devices that send their large modes as MJPEG.
+    // The FFmpeg meson port selects `blockdsp hpeldsp exif idctdsp jpegtables`
+    // by itself (`subprojects/FFmpeg/depgraph.py`).
+    "mjpeg_decoder=enabled",
     // What the VP9 decoder selects; with every automatic feature off they
     // are not pulled in on their own and the decoder would be dropped.
     "vp9_parser=enabled",

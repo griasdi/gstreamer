@@ -377,6 +377,11 @@ impl Plan {
                         // (cpal); PulseAudio and PipeWire serve it through
                         // their ALSA plugins.
                         "-Dgst-plugins-base:alsa=enabled",
+                        // v4l2src and its device provider for capture cards and
+                        // cameras. gudev and libv4l2 stay off through
+                        // `auto_features=disabled`, so the provider probes
+                        // `/dev/video*` itself.
+                        "-Dgst-plugins-good:v4l2=enabled",
                         // ximagesrc for X11 capture; libX11, Xext, Xfixes
                         // and Xdamage are linked dynamically from the
                         // system.
@@ -408,6 +413,7 @@ impl Plan {
                 // libva is static, the driver is the system's.
                 plugins.push("va");
                 plugins.push("ximagesrc");
+                plugins.push("video4linux2");
                 // The meson check compares the plugins' static library
                 // names (`libgst<name>.a`), not the plugin names.
                 let names: Vec<String> = plugins.iter().map(|p| format!("libgst{p}.a")).collect();
@@ -443,6 +449,10 @@ impl Plan {
                         // qsv builds its bundled oneVPL dispatcher.
                         "-Dgst-plugins-bad:amfcodec=enabled",
                         "-Dgst-plugins-bad:qsv=enabled",
+                        // `mfvideosrc` and its device provider
+                        // `mfdeviceprovider` for capture cards and cameras.
+                        // GstWinRT is built along with it on MSVC.
+                        "-Dgst-plugins-bad:mediafoundation=enabled",
                     ]
                     .map(String::from),
                 );
@@ -454,6 +464,13 @@ impl Plan {
                         "-Dgst-full=disabled",
                         "-Dgstreamer:check=enabled",
                         "-Dgst-plugins-good:osxaudio=enabled",
+                        // `avfvideosrc` and `avfdeviceprovider`.
+                        // `avfvideosrc.m` includes the GstGL headers, so GstGL
+                        // is built; the `opengl` plugin that comes with it is
+                        // not bundled.
+                        "-Dgst-plugins-bad:applemedia=enabled",
+                        "-Dgst-plugins-base:gl=enabled",
+                        "-Dgst-plugins-bad:gl=enabled",
                     ]
                     .map(String::from),
                 );
