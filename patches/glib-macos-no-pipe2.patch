@@ -1,0 +1,32 @@
+# GLib: keep off pipe2 on macOS
+#
+# Keeps GLib off `pipe2` on macOS.
+#
+# The macOS SDK declares `pipe2` as introduced in macOS 27, so clang
+# weak-imports it and on every older system the symbol is null. meson's
+# `has_function` check links a declaration of its own, never sees the
+# availability of the header, and sets `HAVE_PIPE2`; GLib 2.86 then calls
+# the null pointer in `g_unix_open_pipe_internal`, and every `g_spawn`
+# crashes with SIGSEGV - `gst_init` spawns `gst-plugin-scanner`, so the app
+# dies at start. CPython (python/cpython#153711) and Ruby
+# (bugs.ruby-lang.org/issues/22311) hit the same trap; GLib has no runtime
+# check yet, so the Apple build keeps the `pipe()` fallback it used before
+# the SDK gained the declaration.
+#
+# Applies to: GLib 2.86.3 (`subprojects/glib.wrap` of the GStreamer
+# monorepo), macOS targets only.
+# License: LGPL-2.1-or-later, the license of the file it modifies
+# (patches/README.md).
+diff --git a/subprojects/glib-2.86.3/glib/glib-unixprivate.h b/subprojects/glib-2.86.3/glib/glib-unixprivate.h
+index fa13fe8..b6f9941 100644
+--- a/subprojects/glib-2.86.3/glib/glib-unixprivate.h
++++ b/subprojects/glib-2.86.3/glib/glib-unixprivate.h
+@@ -44,7 +44,7 @@ g_unix_open_pipe_internal (int *fds,
+                            gboolean close_on_exec,
+                            gboolean nonblock)
+   {
+-#ifdef HAVE_PIPE2
++#if defined(HAVE_PIPE2) && !defined(__APPLE__)
+   do
+     {
+       int ecode;

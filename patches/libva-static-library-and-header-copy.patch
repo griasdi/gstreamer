@@ -1,0 +1,52 @@
+# libva: build static libraries and copy the headers at setup
+#
+# Two fixes to libva 2.22.0's `va/meson.build` (`subprojects/libva.wrap` of
+# the GStreamer monorepo), for the `va` plugin's libva on Linux.
+#
+# - libva and libva-drm are declared with `shared_library`, which ignores
+#   `--default-library`. As `library()` they are static archives that end up
+#   inside `libgstreamer-full-1.0.so` like every other dependency, and the
+#   app needs no libva on the system to start. The drivers are loaded with
+#   `dlopen` from the directories `-Dlibva:driverdir` names (`va_driver_dirs`
+#   in src/build.rs) and talk to libva through the `VADriverContext` function
+#   table, not through libva's exported symbols (Mesa's `*_drv_video.so` do
+#   not link libva), so a static libva serves them too.
+# - As a subproject, libva copies `va/drm/va_drm.h` to `<build>/va/va_drm.h`
+#   with `fs.copyfile`, a build step nothing that includes the header depends
+#   on, so gst-plugins-bad's `gstvadisplay_drm.c` can compile first and miss
+#   `<va/va_drm.h>` (or take the build machine's). `configure_file(copy:
+#   true)`, libva's own fallback for older meson, copies at setup.
+#
+# Applies to: libva 2.22.0, Linux targets only.
+# License: MIT, the license of the file it modifies (patches/README.md).
+diff --git a/subprojects/libva-2.22.0/va/meson.build b/subprojects/libva-2.22.0/va/meson.build
+index 6005cf8..715e799 100644
+--- a/subprojects/libva-2.22.0/va/meson.build
++++ b/subprojects/libva-2.22.0/va/meson.build
+@@ -68,7 +68,7 @@ endif
+ 
+ install_headers(libva_headers, subdir : 'va')
+ 
+-libva = shared_library(
++libva = library(
+   'va',
+   sources : libva_sources +
+             libva_headers +
+@@ -121,7 +121,7 @@ if WITH_DRM
+ 
+   install_headers(libva_drm_headers, subdir : 'va')
+ 
+-  libva_drm = shared_library(
++  libva_drm = library(
+     'va-drm',
+     sources : libva_drm_sources +
+               libva_drm_headers +
+@@ -329,7 +329,7 @@ endif
+ 
+ foreach header : libva_headers_subproject
+   if meson.version().version_compare('>= 0.64')
+-    fs.copyfile(header)
++    configure_file(output: fs.name(header), input: header, copy: true)
+   else
+     configure_file(output: fs.name(header), input: header, copy: true)
+   endif

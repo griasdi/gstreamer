@@ -1,0 +1,7 @@
+# `git apply` needs the patches byte for byte: a checkout with CRLF line endings
+# (Git for Windows defaults to core.autocrlf=true) would not apply to the LF
+# sources they patch.
+patches/*.patch text eol=lf
+# What runs on Linux and macOS, whatever machine checked it out.
+*.sh text eol=lf
+*.Containerfile text eol=lf

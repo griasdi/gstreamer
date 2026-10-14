@@ -1,0 +1,37 @@
+# svtav1enc: do not block in SVT-AV1's low-delay mode
+#
+# Lets `svtav1enc` encode in SVT-AV1's low-delay mode.
+#
+# In low delay, `svt_av1_enc_get_packet` blocks until a packet exists instead
+# of returning `EB_NoErrorEmptyQueue` (SVT-AV1 v4.2.0
+# `Source/Lib/Globals/enc_handle.c`: `if (pic_send_done || cfg->pred_structure
+# == LOW_DELAY) svt_get_full_object(...)`), and `rtc=1` forces
+# `pred_structure = LOW_DELAY`. `gst_svtav1enc_dequeue_encoded_frames`
+# (gst-plugins-bad 1.28.7 `ext/svtav1/gstsvtav1enc.c`, unchanged on GStreamer
+# `main`) is called from `handle_frame` after every picture and loops on
+# `get_packet` until the queue reports empty: after the packet of the picture
+# just sent, its second call blocks the streaming thread forever, and the
+# element emits one frame and hangs. Low delay neither reorders nor emits
+# overlay frames, so each picture yields exactly one packet; the patched loop
+# takes that one and returns, and drains fully only at end of stream
+# (`done_sending_pics`). `rtc` and `LOW_DELAY` are public in SVT-AV1 4.2.0
+# `Source/API/EbSvtAv1Enc.h`.
+#
+# Applies to: gst-plugins-bad of the GStreamer monorepo 1.28.7, every target.
+# License: LGPL-2.1-or-later, the license of the file it modifies
+# (patches/README.md).
+diff --git a/subprojects/gst-plugins-bad/ext/svtav1/gstsvtav1enc.c b/subprojects/gst-plugins-bad/ext/svtav1/gstsvtav1enc.c
+index c42be87..1d73794 100644
+--- a/subprojects/gst-plugins-bad/ext/svtav1/gstsvtav1enc.c
++++ b/subprojects/gst-plugins-bad/ext/svtav1/gstsvtav1enc.c
+@@ -1003,7 +1003,9 @@ gst_svtav1enc_dequeue_encoded_frames (GstSvtAv1Enc * svtav1enc,
+           gst_video_encoder_finish_frame (GST_VIDEO_ENCODER (svtav1enc), frame);
+     }
+ 
+-  } while (res == EB_ErrorNone && !encode_at_eos && ret == GST_FLOW_OK);
++  } while (res == EB_ErrorNone && !encode_at_eos && ret == GST_FLOW_OK
++      && (done_sending_pics || !(svtav1enc->svt_config->rtc
++              || svtav1enc->svt_config->pred_structure == LOW_DELAY)));
+ 
+   return ret;
+ }
