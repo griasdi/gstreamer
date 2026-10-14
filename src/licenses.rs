@@ -59,8 +59,10 @@ const ONLY: [(&str, &[&str]); 1] = [(
 /// Components that ship no license file: the license notice at the top of a
 /// source file of the tree stands in (component name prefix, that file).
 /// libdrm 2.4.124 is licensed under the MIT license in the header of each of
-/// its files.
-const HEADER_LICENSES: [(&str, &str); 1] = [("libdrm", "xf86drm.c")];
+/// its files; the Khronos GL headers (the `gl-headers` wrap, GstGL on macOS)
+/// under the MIT-style Khronos license at the top of each header.
+const HEADER_LICENSES: [(&str, &str); 2] =
+    [("libdrm", "xf86drm.c"), ("gl-headers", "glext/GL/glext.h")];
 
 /// Subprojects that only provide programs meson runs during the build
 /// (prebuilt bison, flex, nasm and pkg-config for macOS and Windows): nothing
@@ -405,11 +407,9 @@ fn header_license(text: &str) -> Option<String> {
                 .trim_end_matches("*/")
                 .lines()
                 .map(|line| {
-                    let line = line.trim_start();
-                    line.strip_prefix("* ")
-                        .or_else(|| line.strip_prefix('*'))
-                        .unwrap_or(line)
-                        .trim_end()
+                    // ` * text` and the Khronos headers' `** text`.
+                    let line = line.trim_start().trim_start_matches('*');
+                    line.strip_prefix(' ').unwrap_or(line).trim_end()
                 })
                 .collect();
             return Some(lines.join("\n").trim().to_owned() + "\n");
