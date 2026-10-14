@@ -300,7 +300,9 @@ fn copy_licenses(source: &Source, dest: &Path) -> Result<Vec<String>> {
         for entry in entries {
             let entry = entry?;
             let name = entry.file_name();
-            if name.to_str().is_some_and(is_license_file) && entry.path().is_file() {
+            if name.to_str().is_some_and(is_license_file)
+                && resolve_link(&source.dir, &entry.path())?.is_file()
+            {
                 found.insert(dir.join(name));
             }
         }
@@ -344,12 +346,49 @@ fn copy_licenses(source: &Source, dest: &Path) -> Result<Vec<String>> {
         if let Some(parent) = to.parent() {
             fs::create_dir_all(parent)?;
         }
-        let from = source.dir.join(rel);
+        let from = resolve_link(&source.dir, &source.dir.join(rel))?;
         fs::copy(&from, &to)
             .with_context(|| format!("copy {} to {}", from.display(), to.display()))?;
         names.push(rel.to_string_lossy().replace('\\', "/"));
     }
     Ok(names)
+}
+
+/// `path` itself, or the file a symbolic link at `path` names. GLib's
+/// `COPYING` is a link to `LICENSES/LGPL-2.1-or-later.txt`; Windows does not
+/// follow such a link for a program without the symlink privilege, so it is
+/// resolved here, relative to the link's directory and only within `tree`.
+fn resolve_link(tree: &Path, path: &Path) -> Result<PathBuf> {
+    let is_link = fs::symlink_metadata(path)
+        .with_context(|| format!("stat {}", path.display()))?
+        .file_type()
+        .is_symlink();
+    if !is_link {
+        return Ok(path.to_owned());
+    }
+    let target = fs::read_link(path).with_context(|| format!("read link {}", path.display()))?;
+    ensure!(
+        target.is_relative(),
+        "{} links to the absolute path {}",
+        path.display(),
+        target.display()
+    );
+    let mut resolved = path.parent().unwrap_or(tree).to_owned();
+    for part in target.to_string_lossy().split(['/', '\\']) {
+        match part {
+            "" | "." => {}
+            ".." => {
+                ensure!(
+                    resolved.pop() && resolved.starts_with(tree),
+                    "{} links out of {}",
+                    path.display(),
+                    tree.display()
+                );
+            }
+            part => resolved.push(part),
+        }
+    }
+    Ok(resolved)
 }
 
 /// The license notice at the top of `text`: the first block comment that
