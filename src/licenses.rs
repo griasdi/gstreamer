@@ -62,6 +62,17 @@ const ONLY: [(&str, &[&str]); 1] = [(
 /// its files.
 const HEADER_LICENSES: [(&str, &str); 1] = [("libdrm", "xf86drm.c")];
 
+/// Subprojects that only provide programs meson runs during the build
+/// (prebuilt bison, flex, nasm and pkg-config for macOS and Windows): nothing
+/// of them is built into or shipped with the prefix, so they are no
+/// components.
+const BUILD_TOOLS: [&str; 4] = [
+    "macos-bison-binary",
+    "win-flex-bison-binaries",
+    "win-nasm",
+    "win-pkgconfig",
+];
+
 /// Writes `share/licenses/` into the prefix of `plan` and returns the
 /// components it holds, by name.
 pub fn collect(plan: &Plan) -> Result<Vec<Component>> {
@@ -136,6 +147,11 @@ fn gstreamer_sources(src: &Path, build: &Path) -> Result<Vec<Source>> {
         let compiled = compiled_dirs(&root, &sources);
         return dirs
             .into_iter()
+            .filter(|rel| {
+                !rel.file_name()
+                    .and_then(OsStr::to_str)
+                    .is_some_and(|name| BUILD_TOOLS.contains(&name))
+            })
             .map(|rel| {
                 let name = rel
                     .file_name()
