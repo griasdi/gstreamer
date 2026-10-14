@@ -1,0 +1,15 @@
+# Release channels of the GStreamer build: the CI sorts a push to main (the
+# gate only) into `dev` and a release tag into `release`. No job runs on a
+# cron; `nightly` keeps the three channels of the other griasdi repositories.
+# The first channel whose `on` matches an event names the pipeline's channel.
+[[channel]]
+name = "dev"
+on = ["push main"]
+
+[[channel]]
+name = "nightly"
+on = ["cron *"]
+
+[[channel]]
+name = "release"
+on = ["tag v*"]
