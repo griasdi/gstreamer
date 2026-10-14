@@ -7,8 +7,8 @@
 # when_busy = "freeze"
 # timeout_minutes = 240
 # ///
-# The x86_64 Linux prefix of GStreamer and its source, built natively on
-# tuco-pc.
+# The x86_64 Linux libraries of GStreamer (runtime and link files) and their
+# source, built natively on tuco-pc.
 set -euo pipefail
 . .zeughaus-ci/lib.sh
 check_tag

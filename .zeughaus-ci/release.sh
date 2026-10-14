@@ -6,10 +6,10 @@
 # when_busy = "run"
 # timeout_minutes = 60
 # ///
-# The GitHub release of a tag: the install prefix and the source of every
-# platform job, and SHA256SUMS over the ten files. The release id is the tag
-# without its `v`; a platform job that built another release id fails this
-# job, because its files are missing.
+# The GitHub release of a tag: the runtime libraries with the files that link
+# them, and the source, of every platform job, and SHA256SUMS over the ten
+# files. The release id is the tag without its `v`; a platform job that built
+# another release id fails this job, because its files are missing.
 #
 # Runs on sadala (aarch64, 2 cores, 3 GB, a small /tmp tmpfs) without cargo
 # and without `gh`: curl, jq, sha256sum and git. The GitHub REST API through
@@ -98,8 +98,8 @@ rev=${R##*-}
 {
     printf 'GStreamer %s for griasdi, release `%s` (recipe revision %s).\n\n' "$gst" "$R" "$rev"
     printf 'Built by the recipe at this tag, from commit `%s`. For each target there are two files:\n\n' "$sha"
-    printf -- '- `gstreamer-%s-<target>.tar.gz`: the install prefix (GStreamer and its plugins and libraries) built for the target.\n' "$R"
-    printf -- '- `gstreamer-%s-<target>-source.tar.gz`: the source the prefix was built from.\n\n' "$R"
+    printf -- '- `gstreamer-%s-<target>.tar.gz`: the runtime (what goes into griasdi'"'"'s installation) and the link files (pkg-config files and libraries for building griasdi) built for the target.\n' "$R"
+    printf -- '- `gstreamer-%s-<target>-source.tar.gz`: the source those libraries were built from.\n\n' "$R"
     printf 'Targets: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu, x86_64-pc-windows-msvc, aarch64-apple-darwin, x86_64-apple-darwin.\n\n'
     printf 'How the recipe builds these and how to use them: [README.md](https://github.com/%s/blob/%s/README.md).\n\n' "$CI_REPO_SLUG" "$tag"
     printf 'SHA256SUMS:\n\n```\n'

@@ -9,11 +9,13 @@ use crate::pins::GST_TAG;
 pub const REPOSITORY_URL: &str = "https://github.com/griasdi/gstreamer";
 
 /// The second half of the release id. It is bumped whenever a change to this
-/// repository changes what a build produces (a pin, an option, a patch, the
-/// way a prefix is finished), and starts again at 1 with a new GStreamer tag.
-/// A release is published by pushing the tag [`release_tag`]; the CI refuses a
-/// tag that is not that.
-pub const RECIPE_REVISION: &str = "1";
+/// repository changes what a release ships (a pin, an option, a patch, what is
+/// packed out of the prefix and how), and starts again at 1 with a new
+/// GStreamer tag. A release is published by pushing the tag [`release_tag`];
+/// the CI refuses a tag that is not that. Whether the prefix under
+/// `target/gstreamer` is built again for a new revision is
+/// [`crate::plan::BUILD_REVISION`] and the other inputs of its stamp.
+pub const RECIPE_REVISION: &str = "2";
 
 /// The release id, for example `1.28.7-1`.
 pub fn release_id() -> String {
@@ -40,7 +42,7 @@ fn check_tag_against(tag: &str, id: &str) -> Result<()> {
     )
 }
 
-/// The archive of the install prefix of `target` in release `id`.
+/// The archive of the runtime and the link files of `target` in release `id`.
 pub fn binary_asset(id: &str, target: &str) -> String {
     format!("gstreamer-{id}-{target}.tar.gz")
 }

@@ -14,8 +14,16 @@ use crate::pins::{
     NASM_WIN64, NINJA, ORC_COMMIT, PKGCONF, PLUGINS, PYTHON, PYTHON_PLACEHOLDER, SCREEN_PLUGINS,
     SVTAV1_COMMIT, TRUSTSTORE,
 };
-use crate::release::RECIPE_REVISION;
 use crate::util::{hex, root};
+
+/// Bumped when the build or its finishing step produce something else in a
+/// way that the other inputs of the stamp do not show, so that existing
+/// prefixes are built again. It is not the release's revision
+/// ([`crate::release::RECIPE_REVISION`]): a release that only changes what is
+/// packed out of the prefix (`stage.rs`) leaves the prefix, and with it every
+/// CI cache of it, as it is. Its value was the recipe revision of the first
+/// release, so the stamps of the prefixes of that release stay valid.
+pub const BUILD_REVISION: &str = "1";
 
 /// The host's target triple, from `rustc -vV`.
 pub fn host_triple() -> Result<String> {
@@ -53,7 +61,8 @@ pub struct Layout {
     /// `target/gstreamer`: `tools/` (shared by every target), the sources,
     /// the build directories and the prefixes.
     pub base: PathBuf,
-    /// The install prefix, `<base>/<triple>`: what a release ships.
+    /// The install prefix, `<base>/<triple>`: the build output a release is
+    /// staged out of (`stage.rs`).
     pub prefix: PathBuf,
     /// The GStreamer monorepo and the meson subprojects fetched into it,
     /// `<base>/src-<triple>`.
@@ -149,7 +158,7 @@ impl Plan {
         }
         if os == Os::Windows {
             // meson's pkg-config, for SVT-AV1's `SvtAv1Enc.pc`: the pkgconf
-            // `tools()` builds, which a Windows release ships in `bin/`.
+            // `tools()` builds, which a Windows release ships in `link/bin/`.
             binaries.push(format!(
                 "pkg-config = '{}'",
                 layout
@@ -484,7 +493,7 @@ impl Plan {
             NASM_WIN64.sha256,
             DAV1D.sha256,
             PKGCONF.sha256,
-            RECIPE_REVISION,
+            BUILD_REVISION,
             &patches,
             &self.layout.triple,
             &self.machine_file,

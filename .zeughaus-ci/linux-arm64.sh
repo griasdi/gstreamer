@@ -7,8 +7,8 @@
 # when_busy = "freeze"
 # timeout_minutes = 240
 # ///
-# The aarch64 Linux prefix of GStreamer and its source, built natively in an
-# Apple `container` on atik.
+# The aarch64 Linux libraries of GStreamer (runtime and link files) and their
+# source, built natively in an Apple `container` on atik.
 set -euo pipefail
 . .zeughaus-ci/lib.sh
 check_tag

@@ -15,17 +15,16 @@
 //! (`patches.rs`).
 //!
 //! - Linux: one shared `libgstreamer-full-1.0.so` (meson's gst-full, every
-//!   library static inside it) with exactly the plugins the player needs,
-//!   and shim `.pc` files in `<prefix>/griasdi-pkgconfig` that point every
-//!   GLib and GStreamer pkg-config name the Rust crates probe at it. The
-//!   static archives in `<prefix>/lib` are never linked into the app.
+//!   library static inside it) with exactly the plugins the player needs.
+//!   The static archives in `<prefix>/lib` are never linked into the app.
 //! - Windows and macOS: a shared build (one DLL or dylib per library and
 //!   plugin) of the same source and plugin set.
 //!
 //! Everything lands below `target/gstreamer/`: `tools/` (shared), the
 //! source in `src-<triple>/`, the build directories and the meson machine
-//! file in `build-<triple>/` and the install prefix in `<triple>/`. After the
-//! install the prefix is made relocatable and complete (`finish.rs`).
+//! file in `build-<triple>/` and the install prefix in `<triple>/`, which is
+//! the build output: a release is staged out of it (`stage.rs`). After the
+//! install the prefix is tidied (`finish.rs`).
 //! `<prefix>/.recipe` holds a hash of the whole recipe; a build with a
 //! matching hash returns at once, any other change rebuilds from scratch. A
 //! build that failed while finishing (`<prefix>/.installed` matches) is not
@@ -51,9 +50,8 @@ use crate::plan::{Layout, Os, Plan, host_triple};
 use crate::tools::{Tools, fetch, jobs, tools};
 use crate::util::{git_checkout_env, run};
 
-/// The layout of `target` (the host when `None`), with its install prefix
-/// built and finished if it is not up to date.
-pub fn build(target: Option<&str>) -> Result<Layout> {
+/// `target` (the host when `None`) as a target triple GStreamer is built for.
+fn resolve_target(target: Option<&str>) -> Result<String> {
     let triple = match target {
         Some(t) => t.to_owned(),
         None => host_triple()?,
@@ -63,6 +61,28 @@ pub fn build(target: Option<&str>) -> Result<Layout> {
         "GStreamer is not built for {triple}; the targets are {}",
         TARGETS.join(", ")
     );
+    Ok(triple)
+}
+
+/// The layout of `target` (the host when `None`) whose install prefix a build
+/// left finished, taken as it is: whether it still matches this recipe is not
+/// checked, and nothing is built.
+pub fn existing(target: Option<&str>) -> Result<Layout> {
+    let triple = resolve_target(target)?;
+    let layout = Layout::new(&triple);
+    ensure!(
+        layout.prefix.join(".recipe").is_file(),
+        "{} holds no finished build of GStreamer for {triple}: build it first, or leave out \
+         --no-build",
+        layout.prefix.display()
+    );
+    Ok(layout)
+}
+
+/// The layout of `target` (the host when `None`), with its install prefix
+/// built and finished if it is not up to date.
+pub fn build(target: Option<&str>) -> Result<Layout> {
+    let triple = resolve_target(target)?;
     let plan = Plan::new(Layout::new(&triple))?;
     let layout = &plan.layout;
     let stamp = plan.stamp()?;
@@ -311,6 +331,21 @@ fn build_gstreamer(plan: &Plan, tools: &Tools) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_target_is_one_of_the_five_or_an_error_that_names_them() {
+        for target in TARGETS {
+            assert_eq!(resolve_target(Some(target)).unwrap(), target);
+        }
+        let error = resolve_target(Some("riscv64-unknown-linux-gnu"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("not built for riscv64-unknown-linux-gnu"),
+            "{error}"
+        );
+        assert!(error.contains("x86_64-pc-windows-msvc"), "{error}");
+    }
 
     #[test]
     fn a_wrap_gets_the_pinned_revision_and_nothing_else_changes() {

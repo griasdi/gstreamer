@@ -3,9 +3,13 @@
 //!
 //! - `build [--target <triple>]`: the install prefix of the target (the host
 //!   without `--target`) in `target/gstreamer/<triple>/`, built if it is not up
-//!   to date (`build.rs`) and made relocatable and complete (`finish.rs`).
-//! - `dist [--target <triple>] --out <dir>`: `build`, then the two archives of
-//!   the release into `<dir>` (`dist.rs`): the prefix and its source.
+//!   to date (`build.rs`) and tidied, with the license texts of its components
+//!   (`finish.rs`).
+//! - `dist [--target <triple>] [--no-build] --out <dir>`: `build`, then the two
+//!   archives of the release into `<dir>` (`dist.rs`): the runtime and link
+//!   parts staged out of the prefix (`stage.rs`), and the source. With
+//!   `--no-build` the prefix is taken as it is, finished or not up to date,
+//!   and is never built.
 //! - `release-id`: the release id, `<GStreamer tag>-<recipe revision>`.
 //! - `check-tag <tag>`: succeeds if the tag is `v` plus the release id; the CI
 //!   refuses any other.
@@ -21,10 +25,14 @@ mod dist;
 mod finish;
 mod licenses;
 mod macos;
+mod notice;
 mod patches;
+mod pe;
 mod pins;
+mod pkgconfig;
 mod plan;
 mod release;
+mod stage;
 mod tools;
 mod util;
 
@@ -33,7 +41,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 
 const USAGE: &str = "usage: griasdi-gstreamer <build [--target <triple>] \
-    | dist [--target <triple>] --out <dir> | release-id | check-tag <tag>>";
+    | dist [--target <triple>] [--no-build] --out <dir> | release-id | check-tag <tag>>";
 
 /// What the command line asks for.
 #[derive(Debug, PartialEq, Eq)]
@@ -43,6 +51,7 @@ enum Command {
     },
     Dist {
         target: Option<String>,
+        no_build: bool,
         out: PathBuf,
     },
     ReleaseId,
@@ -59,6 +68,9 @@ fn parse(args: &[String]) -> Result<Command, String> {
             if flags.out.is_some() {
                 return Err("build takes no --out".to_owned());
             }
+            if flags.no_build {
+                return Err("build takes no --no-build".to_owned());
+            }
             Ok(Command::Build {
                 target: flags.target,
             })
@@ -67,6 +79,7 @@ fn parse(args: &[String]) -> Result<Command, String> {
             let flags = Flags::parse(rest)?;
             Ok(Command::Dist {
                 target: flags.target,
+                no_build: flags.no_build,
                 out: flags.out.ok_or("dist needs --out <dir>")?,
             })
         }
@@ -83,6 +96,7 @@ fn parse(args: &[String]) -> Result<Command, String> {
 struct Flags {
     target: Option<String>,
     out: Option<PathBuf>,
+    no_build: bool,
 }
 
 impl Flags {
@@ -90,6 +104,7 @@ impl Flags {
         let mut flags = Flags {
             target: None,
             out: None,
+            no_build: false,
         };
         let mut args = args.iter();
         while let Some(flag) = args.next() {
@@ -103,6 +118,7 @@ impl Flags {
                 "--out" if flags.out.is_none() => {
                     flags.out = Some(PathBuf::from(value(&mut args)?))
                 }
+                "--no-build" if !flags.no_build => flags.no_build = true,
                 other => return Err(format!("unexpected argument {other}")),
             }
         }
@@ -124,7 +140,11 @@ fn main() -> Result<()> {
             let layout = build::build(target.as_deref())?;
             eprintln!("GStreamer is in {}", layout.prefix.display());
         }
-        Command::Dist { target, out } => dist::dist(target.as_deref(), &out)?,
+        Command::Dist {
+            target,
+            no_build,
+            out,
+        } => dist::dist(target.as_deref(), no_build, &out)?,
         Command::ReleaseId => println!("{}", release::release_id()),
         Command::CheckTag(tag) => release::check_tag(&tag)?,
     }
@@ -155,12 +175,27 @@ mod tests {
             parse(&args(&["dist", "--out", "/tmp/d", "--target", "x"])),
             Ok(Command::Dist {
                 target: Some("x".to_owned()),
+                no_build: false,
                 out: PathBuf::from("/tmp/d")
             })
         );
         assert!(parse(&args(&["dist"])).is_err());
         assert!(parse(&args(&["dist", "--target", "x"])).is_err());
         assert!(parse(&args(&["build", "--out", "/tmp/d"])).is_err());
+    }
+
+    #[test]
+    fn dist_can_take_the_prefix_as_it_is_and_build_cannot() {
+        assert_eq!(
+            parse(&args(&["dist", "--no-build", "--out", "/tmp/d"])),
+            Ok(Command::Dist {
+                target: None,
+                no_build: true,
+                out: PathBuf::from("/tmp/d")
+            })
+        );
+        assert!(parse(&args(&["build", "--no-build"])).is_err());
+        assert!(parse(&args(&["dist", "--no-build", "--no-build", "--out", "d"])).is_err());
     }
 
     #[test]

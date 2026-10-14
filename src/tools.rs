@@ -256,7 +256,7 @@ fn nasm_windows(dir: &Path, python: &Path) -> Result<PathBuf> {
 }
 
 /// pkgconf built with meson into `tools/pkgconf`; a Windows release ships
-/// its `pkgconf.exe` in `bin/`, for cargo's pkg-config probes.
+/// its `pkgconf.exe` in `link/bin/`, for cargo's pkg-config probes.
 fn pkgconf_windows(dir: &Path, tools: &Tools) -> Result<()> {
     let prefix = dir.join("pkgconf");
     let stamp = prefix.join(".griasdi-pin");

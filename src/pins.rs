@@ -1,7 +1,8 @@
 //! What the build fetches and with which options: the tags, commits and
 //! SHA-256 of every download, the plugins and the FFmpeg features. A change
 //! here changes the binaries, so it comes with a new
-//! [`crate::release::RECIPE_REVISION`].
+//! [`crate::release::RECIPE_REVISION`] (and, since the prefix has to be built
+//! again, [`crate::plan::BUILD_REVISION`] or another input of its stamp).
 
 /// The GStreamer release: tag and the commit it must resolve to.
 pub const GST_TAG: &str = "1.28.7";
@@ -82,8 +83,11 @@ pub const TARGETS: [&str; 5] = [
 ];
 
 /// The plugins the player and screen sharing need on every platform, by
-/// plugin name. Linux links them into gst-full; Windows and macOS bundle
-/// their files (`super::PLUGINS`).
+/// plugin name (`gst<name>.dll`, `libgst<name>.dylib`): the ones the player
+/// pipelines use (`crates/griasdi-desktop/src/pipeline.rs` of griasdi) and
+/// screen sharing needs. Linux links them into gst-full; the runtime of a
+/// Windows or macOS release carries their files (`stage.rs`). dav1d is not
+/// among them: its decoder is linked into the app (`gst-plugin-dav1d`).
 pub const PLUGINS: [&str; 21] = [
     // queue, typefind, identity; the typefinders decodebin3 relies on.
     "coreelements",
@@ -109,7 +113,7 @@ pub const PLUGINS: [&str; 21] = [
     "mpegtsdemux",
     "videoparsersbad",
     "opus",
-    // avdec_h264, avdec_vp9, avdec_aac: the LGPL FFmpeg below.
+    // avdec_h264, avdec_vp9, avdec_aac: the LGPL FFmpeg of the prefix.
     "libav",
     // The screen share's test sources and frame rate (`griasdi-screen`).
     "audiotestsrc",
@@ -117,10 +121,18 @@ pub const PLUGINS: [&str; 21] = [
     "videorate",
 ];
 
-/// Screen sharing's encoders, Linux and Windows; macOS bundles only svtav1
-/// (`MACOS_PLUGINS` in `xtask/src/gstreamer.rs`), it has no NVIDIA encoder:
-/// svtav1enc and nvav1enc, which loads the NVIDIA driver at run time.
+/// Screen sharing's encoders on Linux and Windows (macOS carries only svtav1,
+/// see [`MACOS_PLUGINS`]; it has no NVIDIA encoder): svtav1enc and nvav1enc,
+/// which loads the NVIDIA driver at run time.
 pub const SCREEN_PLUGINS: [&str; 2] = ["svtav1", "nvcodec"];
+
+/// The audio sinks `autoaudiosink` picks from on Windows, the screen capture
+/// source (`d3d11screencapturesrc`), and the AMD and Intel AV1 encoders
+/// (`amfav1enc`, `qsvav1enc`); besides [`PLUGINS`] and [`SCREEN_PLUGINS`].
+pub const WINDOWS_PLUGINS: [&str; 5] = ["wasapi2", "directsound", "d3d11", "amfcodec", "qsv"];
+/// The audio sink and the screen share's encoder (`svtav1enc`) on macOS,
+/// besides [`PLUGINS`].
+pub const MACOS_PLUGINS: [&str; 2] = ["osxaudio", "svtav1"];
 
 /// The FFmpeg components gst-libav uses; every other FFmpeg feature is off.
 pub const FFMPEG_OPTIONS: [&str; 17] = [

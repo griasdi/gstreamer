@@ -5,9 +5,9 @@
 # when_busy = "freeze"
 # timeout_minutes = 300
 # ///
-# The GStreamer prefix and source for Windows, built with MSVC on the Windows
-# VM: the tag check, then the uv that the GStreamer build runs its meson and
-# ninja from, then dist.
+# The GStreamer libraries (runtime and link files) and source for Windows, built
+# with MSVC on the Windows VM: the tag check, then the uv that the GStreamer build
+# runs its meson and ninja from, then dist.
 $ErrorActionPreference = 'Stop'
 
 # Runs a native command and ends the script with its exit code when it fails.
@@ -70,5 +70,5 @@ if (Test-Path (Join-Path $uv 'uv.exe')) {
 }
 $env:PATH = $uv + ';' + $env:PATH
 
-# 2. The prefix and the source, into $env:CI_OUTPUT (created by dist).
+# 2. The two archives, into $env:CI_OUTPUT (created by dist).
 Run 'cargo' @('run', '--release', '--', 'dist', '--target', 'x86_64-pc-windows-msvc', '--out', $env:CI_OUTPUT)

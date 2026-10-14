@@ -5,8 +5,8 @@
 # cache = [".ci-cache", "target"]
 # timeout_minutes = 240
 # ///
-# The GStreamer prefix and source for Apple Silicon Macs, built on atik's host
-# with the host's toolchain.
+# The GStreamer libraries (runtime and link files) and source for Apple Silicon
+# Macs, built on atik's host with the host's toolchain.
 set -euo pipefail
 . .zeughaus-ci/lib.sh
 check_tag

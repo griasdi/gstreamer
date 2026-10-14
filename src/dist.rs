@@ -1,7 +1,9 @@
 //! The two archives of a release for one target:
 //!
-//! - `gstreamer-<id>-<target>.tar.gz`: the install prefix, as exactly one
-//!   top-level directory `<target>/`.
+//! - `gstreamer-<id>-<target>.tar.gz`: what `stage.rs` staged out of the
+//!   prefix, as exactly one top-level directory `<target>/`: `RELEASE`,
+//!   `runtime/` (what goes into griasdi's installation) and `link/` (what
+//!   building griasdi needs). Nothing else of the prefix is shipped.
 //! - `gstreamer-<id>-<target>-source.tar.gz`: the corresponding source of
 //!   those binaries, as exactly one top-level directory
 //!   `gstreamer-<id>-<target>-source/`: the source trees that were built
@@ -17,7 +19,7 @@ use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::UNIX_EPOCH;
 
@@ -26,43 +28,47 @@ use flate2::Compression;
 use flate2::write::GzEncoder;
 use tar::{Builder, EntryType, Header, HeaderMode};
 
-use crate::build::build;
+use crate::build::{build, existing};
 use crate::patches;
 use crate::pins::{
-    DAV1D, FFMPEG_COMMIT, GST_COMMIT, GST_REPO, GST_TAG, PKGCONF, SVTAV1_COMMIT, SVTAV1_REPO,
-    SVTAV1_TAG,
+    DAV1D, FFMPEG_COMMIT, FFMPEG_REPO, GST_COMMIT, GST_REPO, GST_TAG, PKGCONF, SVTAV1_COMMIT,
+    SVTAV1_REPO, SVTAV1_TAG,
 };
 use crate::plan::{Layout, Os};
 use crate::release::{REPOSITORY_URL, binary_asset, release_id, release_tag, source_asset};
+use crate::stage::stage;
 use crate::util::{root, sha256_hex};
 
-/// Builds the prefix of `target` (the host when `None`) if it is not up to
-/// date, then writes both archives of the release into `out`.
-pub fn dist(target: Option<&str>, out: &Path) -> Result<()> {
-    let layout = build(target)?;
+/// Writes both archives of the release of `target` (the host when `None`)
+/// into `out`. The prefix is built first if it is not up to date; with
+/// `no_build` it is taken as it is.
+pub fn dist(target: Option<&str>, no_build: bool, out: &Path) -> Result<()> {
+    let layout = if no_build {
+        existing(target)?
+    } else {
+        build(target)?
+    };
     let id = release_id();
     fs::create_dir_all(out).with_context(|| format!("create {}", out.display()))?;
     // Absolute, to tell whether it lies inside this repository (see
     // `recipe_files`).
     let out = fs::canonicalize(out).with_context(|| format!("resolve {}", out.display()))?;
 
+    let staged = stage(&layout)?;
     let binary = out.join(binary_asset(&id, &layout.triple));
-    write_archive(&binary, true, |archive| {
-        archive.add_tree(&layout.prefix, Path::new(&layout.triple), &prefix_skipped)
+    write_archive(&binary, |archive| {
+        archive.add_tree(&staged.top, Path::new(&layout.triple), &|_| false)
     })?;
     report(&binary)?;
+    // What the archive holds is copied out of the prefix; the staged copy is
+    // of no further use.
+    fs::remove_dir_all(&staged.root)
+        .with_context(|| format!("remove {}", staged.root.display()))?;
 
     let source = out.join(source_asset(&id, &layout.triple));
-    write_archive(&source, false, |archive| {
-        add_sources(archive, &layout, &id, &out)
-    })?;
+    write_archive(&source, |archive| add_sources(archive, &layout, &id, &out))?;
     report(&source)?;
     Ok(())
-}
-
-/// What the prefix keeps for the build's own bookkeeping.
-fn prefix_skipped(rel: &Path) -> bool {
-    rel == Path::new(".recipe") || rel == Path::new(".installed")
 }
 
 /// What is not source: version control, caches of what ran from the trees,
@@ -195,14 +201,14 @@ Corresponding source of GStreamer for griasdi
 
 Release {id}, target {triple}. This archive holds the source that the binaries of
 {binary} were built from, as the build had it: the patches are
-applied, nothing is built. The NOTICE of that archive says what it contains and under
-which licenses.
+applied, nothing is built. The GSTREAMER-NOTICE.txt in the runtime of that archive says
+what it contains and under which licenses.
 
   gstreamer-{GST_TAG}/
       The GStreamer monorepo at tag {GST_TAG} (commit {GST_COMMIT}),
       {GST_REPO}, with the meson subprojects the
       build fetched into subprojects/: GLib, libffi, pcre2, zlib, opus, orc, FFmpeg's
-      meson port (commit {FFMPEG_COMMIT}) and the others the monorepo's
+      meson port ({FFMPEG_REPO}, commit {FFMPEG_COMMIT}) and the others the monorepo's
       wrap files name, each with its origin and SHA-256 in the wrap file. Without
       .git directories and without the download cache subprojects/packagecache.
   {dav1d}/
@@ -235,19 +241,11 @@ struct Archive {
     tar: Builder<GzEncoder<BufWriter<File>>>,
     partial: PathBuf,
     path: PathBuf,
-    /// Whether the archive may only hold symlinks that [`is_plain_link`]
-    /// accepts; the others are shipped as copies of what they point to. The
-    /// prefix archive does that: its consumer unpacks no other link.
-    plain_links: bool,
 }
 
 /// Writes the archive `path`, filled by `fill`. A failed archive leaves
 /// nothing behind.
-fn write_archive(
-    path: &Path,
-    plain_links: bool,
-    fill: impl FnOnce(&mut Archive) -> Result<()>,
-) -> Result<()> {
+fn write_archive(path: &Path, fill: impl FnOnce(&mut Archive) -> Result<()>) -> Result<()> {
     let mut partial = path
         .file_name()
         .context("an archive without a file name")?
@@ -259,23 +257,12 @@ fn write_archive(
         tar: Builder::new(GzEncoder::new(BufWriter::new(file), Compression::default())),
         partial,
         path: path.to_owned(),
-        plain_links,
     };
     if let Err(error) = fill(&mut archive) {
         let _ = fs::remove_file(&archive.partial);
         return Err(error);
     }
     archive.finish()
-}
-
-/// Whether a symlink with this target is one the consumer of the prefix
-/// archive unpacks: not empty, relative, and descending only (no `..`, no
-/// root), like `libx.so -> libx.so.1`.
-fn is_plain_link(target: &Path) -> bool {
-    !target.as_os_str().is_empty()
-        && target
-            .components()
-            .all(|c| matches!(c, Component::Normal(_)))
 }
 
 impl Archive {
@@ -348,9 +335,6 @@ impl Archive {
         if meta.file_type().is_symlink() {
             let target =
                 fs::read_link(path).with_context(|| format!("read link {}", path.display()))?;
-            if self.plain_links && !is_plain_link(&target) {
-                return self.add_copy_of_link(path, name, &target);
-            }
             header.set_entry_type(EntryType::Symlink);
             header.set_size(0);
             self.tar
@@ -366,36 +350,6 @@ impl Archive {
         } else {
             bail!("{} is neither a file nor a link", path.display())
         }
-    }
-
-    /// The symlink `path` that points to `target`, shipped as a copy of the
-    /// file it points to under `name`.
-    fn add_copy_of_link(&mut self, path: &Path, name: &Path, target: &Path) -> Result<()> {
-        let meta = fs::metadata(path).with_context(|| {
-            format!(
-                "{} links to {}, which is not there",
-                path.display(),
-                target.display()
-            )
-        })?;
-        ensure!(
-            meta.is_file(),
-            "{} links to {}, which is not a file; a prefix may only link downwards, or to a file",
-            path.display(),
-            target.display()
-        );
-        eprintln!(
-            "{}: the link to {} is shipped as a copy",
-            name.display(),
-            target.display()
-        );
-        let mut header = header_of(&meta);
-        header.set_entry_type(EntryType::Regular);
-        header.set_size(meta.len());
-        let file = File::open(path).with_context(|| format!("open {}", path.display()))?;
-        self.tar
-            .append_data(&mut header, name, file)
-            .with_context(|| format!("add {}", name.display()))
     }
 
     /// A regular file named `name` with the content `data`.
@@ -440,22 +394,21 @@ fn report(path: &Path) -> Result<()> {
         .file_name()
         .and_then(OsStr::to_str)
         .context("an archive without a file name")?;
-    eprintln!("wrote {} ({size} bytes)", path.display());
+    eprintln!("wrote {} ({size} bytes)", shown(path));
     println!("{}  {name}", sha256_hex(path)?);
     Ok(())
+}
+
+/// `path` for people: without the `\\?\` that `fs::canonicalize` puts in
+/// front of a path on Windows.
+fn shown(path: &Path) -> String {
+    let text = path.display().to_string();
+    text.strip_prefix(r"\\?\").unwrap_or(&text).to_owned()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_prefix_keeps_its_bookkeeping_out_of_the_archive() {
-        assert!(prefix_skipped(Path::new(".recipe")));
-        assert!(prefix_skipped(Path::new(".installed")));
-        assert!(!prefix_skipped(Path::new("lib/.recipe")));
-        assert!(!prefix_skipped(Path::new("RELEASE")));
-    }
 
     #[test]
     fn version_control_caches_and_markers_are_no_source() {
@@ -492,6 +445,12 @@ mod tests {
         assert!(!linux.contains('{') && !windows.contains('{'));
     }
     #[test]
+    fn a_verbatim_windows_path_is_shown_without_its_prefix() {
+        assert_eq!(shown(Path::new(r"\\?\W:\out\a.tar.gz")), r"W:\out\a.tar.gz");
+        assert_eq!(shown(Path::new("/tmp/out/a.tar.gz")), "/tmp/out/a.tar.gz");
+    }
+
+    #[test]
     fn the_output_directory_is_no_part_of_the_recipe() {
         let listing =
             b"README.md\0src/main.rs\0out/a.tar.gz\0out/a.tar.gz.partial\0src/main.rs\0\0";
@@ -512,30 +471,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn only_links_that_descend_are_plain() {
-        for plain in ["libx.so.1", "sub/libx.so.1"] {
-            assert!(is_plain_link(Path::new(plain)), "{plain}");
-        }
-        for other in [
-            "",
-            "..",
-            "../bin/tool",
-            "sub/../libx.so.1",
-            "./libx.so.1",
-            "/usr/lib/libx.so",
-        ] {
-            assert!(!is_plain_link(Path::new(other)), "{other:?}");
-        }
-    }
-
     /// The archive of a small tree: one top-level directory, sorted entries,
-    /// the skipped names absent, a plain symlink kept as a link, the others
-    /// shipped as copies, the executable bit kept, no owner.
+    /// the skipped names absent, a symlink kept as a link (the source has
+    /// some), the executable bit kept, no owner.
     #[cfg(unix)]
     #[test]
     fn an_archive_has_one_top_level_directory_and_keeps_links_and_modes() {
-        use std::io::Read;
         use std::os::unix::fs::{PermissionsExt, symlink};
 
         let dir = std::env::temp_dir().join(format!(
@@ -548,20 +489,16 @@ mod tests {
         fs::create_dir_all(tree.join("bin")).unwrap();
         fs::write(tree.join("lib/libx.so.1"), b"so").unwrap();
         symlink("libx.so.1", tree.join("lib/libx.so")).unwrap();
-        symlink("../bin/tool", tree.join("lib/up")).unwrap();
-        symlink(tree.join("bin/tool"), tree.join("lib/abs")).unwrap();
         fs::write(tree.join("lib/sub/data"), b"data").unwrap();
         fs::write(tree.join("bin/tool"), b"#!/bin/sh\n").unwrap();
         fs::set_permissions(tree.join("bin/tool"), fs::Permissions::from_mode(0o750)).unwrap();
-        fs::write(tree.join(".recipe"), b"stamp").unwrap();
+        fs::write(tree.join(".skipped"), b"stamp").unwrap();
 
         let out = dir.join("out.tar.gz");
-        write_archive(&out, true, |archive| {
-            archive.add_tree(
-                &tree,
-                Path::new("x86_64-unknown-linux-gnu"),
-                &prefix_skipped,
-            )
+        write_archive(&out, |archive| {
+            archive.add_tree(&tree, Path::new("x86_64-unknown-linux-gnu"), &|rel| {
+                rel == Path::new(".skipped")
+            })
         })
         .unwrap();
         assert!(!dir.join("out.tar.gz.partial").exists());
@@ -569,7 +506,7 @@ mod tests {
         let mut tar = tar::Archive::new(flate2::read::GzDecoder::new(File::open(&out).unwrap()));
         let mut seen = Vec::new();
         for entry in tar.entries().unwrap() {
-            let mut entry = entry.unwrap();
+            let entry = entry.unwrap();
             let name = entry
                 .path()
                 .unwrap()
@@ -588,9 +525,7 @@ mod tests {
                 .link_name()
                 .unwrap()
                 .map(|l| l.to_string_lossy().into_owned());
-            let mut data = Vec::new();
-            entry.read_to_end(&mut data).unwrap();
-            seen.push((name, kind, mode, link, data));
+            seen.push((name, kind, mode, link));
         }
         let names: Vec<&str> = seen.iter().map(|s| s.0.as_str()).collect();
         assert_eq!(
@@ -600,12 +535,10 @@ mod tests {
                 "x86_64-unknown-linux-gnu/bin",
                 "x86_64-unknown-linux-gnu/bin/tool",
                 "x86_64-unknown-linux-gnu/lib",
-                "x86_64-unknown-linux-gnu/lib/abs",
                 "x86_64-unknown-linux-gnu/lib/libx.so",
                 "x86_64-unknown-linux-gnu/lib/libx.so.1",
                 "x86_64-unknown-linux-gnu/lib/sub",
                 "x86_64-unknown-linux-gnu/lib/sub/data",
-                "x86_64-unknown-linux-gnu/lib/up",
             ]
         );
         let by_name = |n: &str| seen.iter().find(|s| s.0 == n).unwrap();
@@ -614,16 +547,6 @@ mod tests {
         let link = by_name("x86_64-unknown-linux-gnu/lib/libx.so");
         assert_eq!(link.1, EntryType::Symlink);
         assert_eq!(link.3.as_deref(), Some("libx.so.1"));
-        // A link that goes up, or to an absolute path, is a copy of its file.
-        for copy in [
-            "x86_64-unknown-linux-gnu/lib/up",
-            "x86_64-unknown-linux-gnu/lib/abs",
-        ] {
-            let entry = by_name(copy);
-            assert_eq!(entry.1, EntryType::Regular, "{copy}");
-            assert_eq!(entry.2, 0o755, "{copy}");
-            assert_eq!(entry.4, b"#!/bin/sh\n", "{copy}");
-        }
         fs::remove_dir_all(&dir).unwrap();
     }
 }
