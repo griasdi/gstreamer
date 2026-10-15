@@ -5,7 +5,7 @@ ships, built from source with a fixed recipe, and published as the prebuilt
 libraries that go into griasdi's installation, the files that link them, and
 the source they were built from.
 
-griasdi uses GStreamer 1.28.7 with exactly the plugins its player and screen
+griasdi uses GStreamer 1.28.8 with exactly the plugins its player and screen
 sharing need, and FFmpeg's LGPL decoders for H.264, VP9 and AAC, dav1d and
 SVT-AV1 for AV1. The libraries are built from source because no distribution
 carries that set on every platform, and because griasdi changes a few lines of

@@ -15,7 +15,7 @@ pub const REPOSITORY_URL: &str = "https://github.com/griasdi/gstreamer";
 /// the CI refuses a tag that is not that. Whether the prefix under
 /// `target/gstreamer` is built again for a new revision is
 /// [`crate::plan::BUILD_REVISION`] and the other inputs of its stamp.
-pub const RECIPE_REVISION: &str = "3";
+pub const RECIPE_REVISION: &str = "1";
 
 /// The release id, for example `1.28.7-1`.
 pub fn release_id() -> String {

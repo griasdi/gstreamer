@@ -5,8 +5,8 @@
 //! again, [`crate::plan::BUILD_REVISION`] or another input of its stamp).
 
 /// The GStreamer release: tag and the commit it must resolve to.
-pub const GST_TAG: &str = "1.28.7";
-pub const GST_COMMIT: &str = "070125524a8422e29d3b69a372ed4f62fd343ffa";
+pub const GST_TAG: &str = "1.28.8";
+pub const GST_COMMIT: &str = "1b2a95a1b72787cda146b46df9605b168e5b683b";
 pub const GST_REPO: &str = "https://gitlab.freedesktop.org/gstreamer/gstreamer.git";
 /// GStreamer's meson port of FFmpeg 7.1.1: the head of branch
 /// `meson-7.1.1` that `subprojects/FFmpeg.wrap` names.
@@ -20,7 +20,7 @@ pub const MESON: &str = "1.12.1";
 pub const NINJA: &str = "1.13.2";
 /// Lets meson's downloads use the operating system's certificate store; the
 /// Python uv installs on Windows has no other.
-pub const TRUSTSTORE: &str = "0.10.4";
+pub const TRUSTSTORE: &str = "0.10.5";
 /// CMake from PyPI, like meson and ninja; SVT-AV1 4.2.0 needs at least 3.16.
 pub const CMAKE: &str = "4.4.4";
 /// SVT-AV1 (svtav1enc), built with CMake into the prefix on every operating
@@ -68,9 +68,9 @@ pub const DAV1D: Download = Download {
     dir: "dav1d-1.5.4",
 };
 pub const PKGCONF: Download = Download {
-    url: "https://distfiles.ariadne.space/pkgconf/pkgconf-3.0.7.tar.xz",
-    sha256: "c926ff491cbd9a331a589160811bd97ab1749b4d5198a519338f2cdfabe6940a",
-    dir: "pkgconf-3.0.7",
+    url: "https://distfiles.ariadne.space/pkgconf/pkgconf-3.0.8.tar.xz",
+    sha256: "943f0bc88bcaeceb630b00262e2a8ad5ea4fac3fba72a4267d8b9ec6b35d1194",
+    dir: "pkgconf-3.0.8",
 };
 
 /// The targets GStreamer is built for.
