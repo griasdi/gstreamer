@@ -67,10 +67,12 @@ pub const DAV1D: Download = Download {
     sha256: "686616b7c69eb88d44459391ab25cac13b6647a3b288835c5784e71c1514a5c5",
     dir: "dav1d-1.5.4",
 };
+/// Not 3.0.8: its tarball lacks `tests/api/test-util.c`, which its
+/// `meson.build` names, so meson setup fails.
 pub const PKGCONF: Download = Download {
-    url: "https://distfiles.ariadne.space/pkgconf/pkgconf-3.0.8.tar.xz",
-    sha256: "943f0bc88bcaeceb630b00262e2a8ad5ea4fac3fba72a4267d8b9ec6b35d1194",
-    dir: "pkgconf-3.0.8",
+    url: "https://distfiles.ariadne.space/pkgconf/pkgconf-3.0.7.tar.xz",
+    sha256: "c926ff491cbd9a331a589160811bd97ab1749b4d5198a519338f2cdfabe6940a",
+    dir: "pkgconf-3.0.7",
 };
 
 /// The targets GStreamer is built for.

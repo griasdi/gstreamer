@@ -440,7 +440,7 @@ mod tests {
         assert!(linux.contains("patches/libva-static-library-and-header-copy.patch"));
         assert!(!linux.contains("pkgconf"));
         let windows = sources_text(Os::Windows, "x86_64-pc-windows-msvc", "1.28.7-1");
-        assert!(windows.contains("pkgconf-3.0.8/"));
+        assert!(windows.contains("pkgconf-3.0.7/"));
         assert!(!windows.contains("libva"));
         assert!(!linux.contains('{') && !windows.contains('{'));
     }
