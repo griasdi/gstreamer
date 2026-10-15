@@ -38,7 +38,7 @@ check_tag() {
 
 # The platform jobs of a release, whose prefixes and sources the `release` job
 # collects.
-RELEASE_JOBS="linux-amd64 linux-arm64 windows-amd64 darwin-arm64 darwin-amd64"
+RELEASE_JOBS="linux-amd64 linux-arm64 windows-amd64 darwin-arm64"
 
 # The target triple a platform job builds (the `--target` of its dist).
 job_triple() {
@@ -47,7 +47,6 @@ job_triple() {
     linux-arm64) echo aarch64-unknown-linux-gnu ;;
     windows-amd64) echo x86_64-pc-windows-msvc ;;
     darwin-arm64) echo aarch64-apple-darwin ;;
-    darwin-amd64) echo x86_64-apple-darwin ;;
     *)
         echo "no target for job $1" >&2
         return 1

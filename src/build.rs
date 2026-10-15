@@ -333,7 +333,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_target_is_one_of_the_five_or_an_error_that_names_them() {
+    fn a_target_is_one_of_the_four_or_an_error_that_names_them() {
         for target in TARGETS {
             assert_eq!(resolve_target(Some(target)).unwrap(), target);
         }

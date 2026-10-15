@@ -20,7 +20,7 @@ A release is named `<GStreamer tag>-<recipe revision>`, for example `1.28.7-2`,
 and published from the git tag `v1.28.7-2`. Its assets, at
 `https://github.com/griasdi/gstreamer/releases/download/v<id>/<asset>`, are for
 each target `<T>` (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`,
-`x86_64-pc-windows-msvc`, `aarch64-apple-darwin`, `x86_64-apple-darwin`):
+`x86_64-pc-windows-msvc`, `aarch64-apple-darwin`):
 
 | Asset | Content |
 |---|---|
@@ -147,8 +147,7 @@ ariadne.space and PyPI, and `git` and `curl`:
   the host's prefix (the GLib code generators come from it).
 - macOS: the Xcode command line tools (`otool` and `install_name_tool` relocate
   the runtime), `flex`, `bison` and `pkgconf` (`brew install flex bison
-  pkgconf`). `x86_64-apple-darwin` on an Apple Silicon Mac is a cross build and
-  builds the host's prefix first.
+  pkgconf`).
 - Windows: Visual Studio with the MSVC build tools (meson and cmake find them)
   and the Visual C++ redistributable, whose DLLs the runtime carries (from
   `VCToolsRedistDir` of the Visual Studio environment, else `System32`).
@@ -173,10 +172,10 @@ archive: tracked files and untracked ones that are not ignored.
 3. Commit and push, then tag and push the tag:
    `git tag v<id> && git push origin v<id>`. The CI refuses a tag that is not `v`
    plus the id of the commit it is on.
-4. The tag builds the five targets natively (`.zeughaus-ci/`: `linux-amd64` and
+4. The tag builds the four targets natively (`.zeughaus-ci/`: `linux-amd64` and
    `linux-arm64` in the `ubuntu24` image, `windows-amd64` on the Windows VM,
-   `darwin-arm64` and `darwin-amd64` on atik's host), each with `dist`. The
-   `release` job then creates the GitHub release `v<id>` with all ten archives and
+   `darwin-arm64` on atik's host), each with `dist`. The `release` job then
+   creates the GitHub release `v<id>` with all eight archives and
    `SHA256SUMS`; for a tag that already has a release it replaces the release
    with the new build.
 5. griasdi moves to the new id and the SHA-256 sums of its release.

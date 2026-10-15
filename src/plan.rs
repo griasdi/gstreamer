@@ -265,17 +265,7 @@ impl Plan {
             );
         }
         if os == Os::Macos {
-            let arch = if x86_64 { "x86_64" } else { "arm64" };
-            svtav1_args.push(format!("-DCMAKE_OSX_ARCHITECTURES={arch}"));
-            if cross {
-                // x86_64-apple-darwin is built on an arm64 Mac: SVT-AV1 picks
-                // its assembly by CMAKE_SYSTEM_PROCESSOR, which would be the
-                // host's.
-                svtav1_args.extend([
-                    "-DCMAKE_SYSTEM_NAME=Darwin".to_owned(),
-                    format!("-DCMAKE_SYSTEM_PROCESSOR={arch}"),
-                ]);
-            }
+            svtav1_args.push("-DCMAKE_OSX_ARCHITECTURES=arm64".into());
         }
 
         let mut gst_args: Vec<String> = [
@@ -550,26 +540,6 @@ pkg_config_libdir = ['/usr/lib/aarch64-linux-gnu/pkgconfig', '/usr/share/pkgconf
 system = 'linux'
 cpu_family = 'aarch64'
 cpu = 'aarch64'
-endian = 'little'
-"
-        .to_owned(),
-        "x86_64-apple-darwin" => "\
-[binaries]
-c = ['clang', '-arch', 'x86_64']
-cpp = ['clang++', '-arch', 'x86_64']
-objc = ['clang', '-arch', 'x86_64']
-objcpp = ['clang++', '-arch', 'x86_64']
-# For SVT-AV1's `SvtAv1Enc.pc` (`--pkg-config-path`): a cross build gets no
-# pkg-config unless the cross file names one (README.md: `brew install pkgconf`).
-pkg-config = 'pkg-config'
-
-[host_machine]
-system = 'darwin'
-# A cross file has to say which Apple system: meson only autodetects it for
-# the build machine, and GStreamer's meson.build reads it (`subsystem`).
-subsystem = 'macos'
-cpu_family = 'x86_64'
-cpu = 'x86_64'
 endian = 'little'
 "
         .to_owned(),

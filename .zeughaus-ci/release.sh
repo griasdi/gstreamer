@@ -1,13 +1,13 @@
 #!/bin/bash
 # /// ci
-# needs = ["check", "linux-amd64", "linux-arm64", "windows-amd64", "darwin-arm64", "darwin-amd64"]
+# needs = ["check", "linux-amd64", "linux-arm64", "windows-amd64", "darwin-arm64"]
 # machine = "sadala"
 # secrets = ["GRIASDI_GITHUB_TOKEN"]
 # when_busy = "run"
 # timeout_minutes = 60
 # ///
 # The GitHub release of a tag: the runtime libraries with the files that link
-# them, and the source, of every platform job, and SHA256SUMS over the ten
+# them, and the source, of every platform job, and SHA256SUMS over the eight
 # files. The release id is the tag without its `v`; a platform job that built
 # another release id fails this job, because its files are missing.
 #
@@ -60,7 +60,7 @@ for job in $RELEASE_JOBS; do
     fi
 done
 
-# The checksums of the ten files, sorted by name; the list does not name itself.
+# The checksums of the eight files, sorted by name; the list does not name itself.
 (cd "$work/release" && sha256sum -- "${names[@]}" | sort -k2,2 > SHA256SUMS)
 
 (
@@ -100,7 +100,7 @@ rev=${R##*-}
     printf 'Built by the recipe at this tag, from commit `%s`. For each target there are two files:\n\n' "$sha"
     printf -- '- `gstreamer-%s-<target>.tar.gz`: the runtime (what goes into griasdi'"'"'s installation) and the link files (pkg-config files and libraries for building griasdi) built for the target.\n' "$R"
     printf -- '- `gstreamer-%s-<target>-source.tar.gz`: the source those libraries were built from.\n\n' "$R"
-    printf 'Targets: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu, x86_64-pc-windows-msvc, aarch64-apple-darwin, x86_64-apple-darwin.\n\n'
+    printf 'Targets: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu, x86_64-pc-windows-msvc, aarch64-apple-darwin.\n\n'
     printf 'How the recipe builds these and how to use them: [README.md](https://github.com/%s/blob/%s/README.md).\n\n' "$CI_REPO_SLUG" "$tag"
     printf 'SHA256SUMS:\n\n```\n'
     cat "$work/release/SHA256SUMS"

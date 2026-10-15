@@ -15,10 +15,9 @@
 //!   refuses any other.
 //!
 //! The targets are `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`,
-//! `x86_64-pc-windows-msvc`, `aarch64-apple-darwin` and `x86_64-apple-darwin`.
-//! Each is built natively, on its own platform; the Apple x86_64 target
-//! (on an Apple Silicon Mac) and `aarch64-unknown-linux-gnu` (on x86_64) are
-//! the cross builds the recipe supports besides.
+//! `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`. Each is built
+//! natively, on its own platform; `aarch64-unknown-linux-gnu` on x86_64 is the
+//! cross build the recipe supports besides.
 
 mod build;
 mod dist;
