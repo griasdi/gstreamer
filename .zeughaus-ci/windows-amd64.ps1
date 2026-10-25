@@ -7,7 +7,7 @@
 # ///
 # The GStreamer libraries (runtime and link files) and source for Windows, built
 # with MSVC on the Windows VM: the tag check, then the uv that the GStreamer build
-# runs its meson and ninja from, then dist.
+# runs its meson and ninja from, then dist and the bench.
 $ErrorActionPreference = 'Stop'
 
 # Runs a native command and ends the script with its exit code when it fails.
@@ -72,3 +72,7 @@ $env:PATH = $uv + ';' + $env:PATH
 
 # 2. The two archives, into $env:CI_OUTPUT (created by dist).
 Run 'cargo' @('run', '--release', '--', 'dist', '--target', 'x86_64-pc-windows-msvc', '--out', $env:CI_OUTPUT)
+
+# 3. The bench: codec workloads timed with the gst-launch-1.0 of the prefix; a
+# workload that fails fails the job.
+Run 'cargo' @('run', '--release', '--', 'bench', '--target', 'x86_64-pc-windows-msvc')

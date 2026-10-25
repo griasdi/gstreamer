@@ -110,6 +110,7 @@ cargo run --release -- build [--target <T>]
 cargo run --release -- dist [--target <T>] [--no-build] --out <dir>
 cargo run --release -- release-id
 cargo run --release -- check-tag <tag>
+cargo run --release -- bench [--target <T>]
 ```
 
 - `build` builds the prefix of `<T>` (the host without `--target`) if it is not
@@ -129,6 +130,12 @@ cargo run --release -- check-tag <tag>
   made of absolute paths, does not recognise.
 - `release-id` prints the release id; `check-tag` succeeds if its argument is `v`
   plus that id.
+- `bench` times five codec workloads (H.264 and VP9 decoding of pinned clips,
+  SVT-AV1 encoding, `videoconvertscale`, `audioresample`) with the
+  `gst-launch-1.0` of a finished prefix of a target the host runs, and prints
+  the median of three runs per workload. Every platform job of the CI runs it
+  after `dist`, so a release's logs show its numbers and a broken codec fails
+  the job. The clips are downloaded into `target/gstreamer/tools/downloads/`.
 
 What the build needs, besides a stable Rust toolchain, network access to
 GitLab (freedesktop.org, gitlab.com), github.com, videolan.org, nasm.us,

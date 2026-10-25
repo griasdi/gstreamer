@@ -13,3 +13,4 @@ set -euo pipefail
 . .zeughaus-ci/lib.sh
 check_tag
 cargo run --release -- dist --target aarch64-unknown-linux-gnu --out "$CI_OUTPUT"
+cargo run --release -- bench --target aarch64-unknown-linux-gnu

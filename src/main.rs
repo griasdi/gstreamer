@@ -13,12 +13,16 @@
 //! - `release-id`: the release id, `<GStreamer tag>-<recipe revision>`.
 //! - `check-tag <tag>`: succeeds if the tag is `v` plus the release id; the CI
 //!   refuses any other.
+//! - `bench [--target <triple>]`: times codec workloads with the
+//!   `gst-launch-1.0` of the finished prefix of a target this host runs
+//!   (`bench.rs`).
 //!
 //! The targets are `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`,
 //! `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`. Each is built
 //! natively, on its own platform; `aarch64-unknown-linux-gnu` on x86_64 is the
 //! cross build the recipe supports besides.
 
+mod bench;
 mod build;
 mod dist;
 mod finish;
@@ -40,7 +44,8 @@ use std::path::PathBuf;
 use anyhow::Result;
 
 const USAGE: &str = "usage: griasdi-gstreamer <build [--target <triple>] \
-    | dist [--target <triple>] [--no-build] --out <dir> | release-id | check-tag <tag>>";
+    | dist [--target <triple>] [--no-build] --out <dir> | release-id | check-tag <tag> \
+    | bench [--target <triple>]>";
 
 /// What the command line asks for.
 #[derive(Debug, PartialEq, Eq)]
@@ -55,6 +60,9 @@ enum Command {
     },
     ReleaseId,
     CheckTag(String),
+    Bench {
+        target: Option<String>,
+    },
 }
 
 /// The command in `args` (without the program name), or what is wrong with
@@ -82,6 +90,18 @@ fn parse(args: &[String]) -> Result<Command, String> {
                 out: flags.out.ok_or("dist needs --out <dir>")?,
             })
         }
+        "bench" => {
+            let flags = Flags::parse(rest)?;
+            if flags.out.is_some() {
+                return Err("bench takes no --out".to_owned());
+            }
+            if flags.no_build {
+                return Err("bench takes no --no-build".to_owned());
+            }
+            Ok(Command::Bench {
+                target: flags.target,
+            })
+        }
         "release-id" if rest.is_empty() => Ok(Command::ReleaseId),
         "check-tag" => match rest {
             [tag] => Ok(Command::CheckTag(tag.clone())),
@@ -91,7 +111,7 @@ fn parse(args: &[String]) -> Result<Command, String> {
     }
 }
 
-/// The flags of `build` and `dist`.
+/// The flags of `build`, `dist` and `bench`.
 struct Flags {
     target: Option<String>,
     out: Option<PathBuf>,
@@ -146,6 +166,7 @@ fn main() -> Result<()> {
         } => dist::dist(target.as_deref(), no_build, &out)?,
         Command::ReleaseId => println!("{}", release::release_id()),
         Command::CheckTag(tag) => release::check_tag(&tag)?,
+        Command::Bench { target } => bench::bench(target.as_deref())?,
     }
     Ok(())
 }
@@ -217,5 +238,21 @@ mod tests {
         assert!(parse(&args(&["check-tag", "a", "b"])).is_err());
         assert!(parse(&[]).is_err());
         assert!(parse(&args(&["publish"])).is_err());
+    }
+
+    #[test]
+    fn bench_takes_only_a_target() {
+        assert_eq!(
+            parse(&args(&["bench"])),
+            Ok(Command::Bench { target: None })
+        );
+        assert_eq!(
+            parse(&args(&["bench", "--target", "x"])),
+            Ok(Command::Bench {
+                target: Some("x".to_owned())
+            })
+        );
+        assert!(parse(&args(&["bench", "--out", "d"])).is_err());
+        assert!(parse(&args(&["bench", "--no-build"])).is_err());
     }
 }

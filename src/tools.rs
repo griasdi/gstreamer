@@ -172,30 +172,29 @@ pub fn tools(plan: &Plan) -> Result<Tools> {
     Ok(tools)
 }
 
-/// Downloads `download` into `dir/downloads`, checks its SHA-256 and
-/// unpacks it into `dir/src` with `python`; returns the unpacked directory.
-pub fn fetch(dir: &Path, download: &Download, python: &Path) -> Result<PathBuf> {
+/// Downloads `url` into `dir/downloads` unless the file there already has
+/// the SHA-256 `sha256`, checks it, and returns the downloaded file.
+pub fn download(dir: &Path, url: &str, sha256: &str) -> Result<PathBuf> {
     let downloads = dir.join("downloads");
     fs::create_dir_all(&downloads)?;
-    let name = download
-        .url
-        .rsplit('/')
-        .next()
-        .context("url without a file name")?;
+    let name = url.rsplit('/').next().context("url without a file name")?;
     let file = downloads.join(name);
-    let ok = |file: &Path| sha256_hex(file).is_ok_and(|hash| hash == download.sha256);
+    let ok = |file: &Path| sha256_hex(file).is_ok_and(|hash| hash == sha256);
     if !ok(&file) {
         run(Command::new("curl")
             .args(["-fsSL", "--retry", "3", "-o"])
             .arg(&file)
-            .arg(download.url))?;
-        ensure!(
-            ok(&file),
-            "{} does not have the pinned SHA-256 {}",
-            download.url,
-            download.sha256
-        );
+            .arg(url))?;
+        ensure!(ok(&file), "{url} does not have the pinned SHA-256 {sha256}");
     }
+    Ok(file)
+}
+
+/// Downloads `download` into `dir/downloads`, checks its SHA-256 and
+/// unpacks it into `dir/src` with `python`; returns the unpacked directory.
+pub fn fetch(dir: &Path, download: &Download, python: &Path) -> Result<PathBuf> {
+    let file = self::download(dir, download.url, download.sha256)?;
+    let name = file.file_name().unwrap_or_default().to_string_lossy();
     let src = dir.join("src");
     let unpacked = src.join(download.dir);
     if unpacked.exists() {
