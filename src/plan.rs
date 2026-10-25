@@ -10,9 +10,9 @@ use sha2::{Digest, Sha256};
 
 use crate::patches;
 use crate::pins::{
-    CMAKE, DAV1D, FFMPEG_COMMIT, FFMPEG_OPTIONS, GST_COMMIT, GST_TAG, MESON, NASM_SOURCE,
-    NASM_WIN64, NINJA, ORC_COMMIT, PKGCONF, PLUGINS, PYTHON, PYTHON_PLACEHOLDER, SCREEN_PLUGINS,
-    SVTAV1_COMMIT, TRUSTSTORE,
+    CMAKE, DAV1D, FFMPEG_COMMIT, FFMPEG_OPTIONS, GST_COMMIT, GST_TAG, LLVM_WIN64, MESON,
+    NASM_SOURCE, NASM_WIN64, NINJA, OPUS, ORC_COMMIT, PKGCONF, PLUGINS, PYTHON, PYTHON_PLACEHOLDER,
+    SCREEN_PLUGINS, SVTAV1_COMMIT, TRUSTSTORE,
 };
 use crate::util::{hex, root};
 
@@ -98,6 +98,39 @@ impl Layout {
         self.build.join("machine.ini")
     }
 
+    /// clang-cl of the pinned LLVM release (Windows).
+    pub fn clang_cl(&self) -> PathBuf {
+        self.llvm_bin().join("clang-cl.exe")
+    }
+
+    /// lld-link of the pinned LLVM release (Windows): the linker meson pairs
+    /// with clang-cl, which it would otherwise look up on `PATH`.
+    pub fn lld_link(&self) -> PathBuf {
+        self.llvm_bin().join("lld-link.exe")
+    }
+
+    fn llvm_bin(&self) -> PathBuf {
+        self.tools().join("src").join(LLVM_WIN64.dir).join("bin")
+    }
+
+    /// The meson native file that selects clang-cl (Windows), outside the
+    /// prefix; passed after the machine file.
+    pub fn clang_file(&self) -> PathBuf {
+        self.build.join("clang-cl.ini")
+    }
+
+    /// The unpacked libopus release, shared by every target.
+    pub fn opus_src(&self) -> PathBuf {
+        self.tools().join("src").join(OPUS.dir)
+    }
+
+    /// The install tree of griasdi's libopus, apart from the prefix's own
+    /// `lib`: GStreamer's opus subproject installs a `libopus` and `opus.pc`
+    /// there too.
+    pub fn opus_prefix(&self) -> PathBuf {
+        self.prefix.join("opus")
+    }
+
     /// The unpacked dav1d release, shared by every target.
     pub fn dav1d_src(&self) -> PathBuf {
         self.tools().join("src").join(DAV1D.dir)
@@ -130,10 +163,28 @@ pub struct Plan {
     /// native file. It pins nasm, which meson would otherwise take from a
     /// subproject that only downloads binaries for Windows and macOS.
     pub machine_file: String,
+    /// No LTO: `libdav1d.a` / `dav1d.lib` is linked by rustc's linker in
+    /// griasdi, which reads neither GCC's slim LTO objects nor MSVC `/GL`
+    /// objects.
     pub dav1d_args: Vec<String>,
     /// CMake's arguments for SVT-AV1.
     pub svtav1_args: Vec<String>,
     pub gst_args: Vec<String>,
+    /// Windows: FFmpeg's meson port is built on its own with clang-cl
+    /// (`build::build_ffmpeg`) and found by the GStreamer build through
+    /// pkg-config; elsewhere it is a subproject of the GStreamer build and
+    /// this is `None`.
+    pub ffmpeg_args: Option<Vec<String>>,
+    /// Windows: the meson native file that selects clang-cl and its linker,
+    /// for FFmpeg.
+    pub clang_file: Option<String>,
+    /// The arguments for the static libopus griasdi's voice links
+    /// (`build::build_opus`), installed into [`Layout::opus_prefix`]:
+    /// CMake's on Windows, meson's elsewhere. libopus 1.6.1's meson build
+    /// takes clang-cl for MSVC and compiles its SSE4.1 files without
+    /// `-msse4.1`, which clang-cl refuses; its CMake build knows clang-cl
+    /// (`MSVC_CLANG_CL`).
+    pub opus_args: Vec<String>,
 }
 
 impl Plan {
@@ -207,6 +258,21 @@ impl Plan {
             );
             args.push(machine_ini.clone());
         };
+        let forward = |p: &Path| p.display().to_string().replace('\\', "/");
+        let clang_file = (os == Os::Windows).then(|| {
+            let clang_cl = forward(&layout.clang_cl());
+            let lld_link = forward(&layout.lld_link());
+            format!(
+                "[binaries]\nc = '{clang_cl}'\ncpp = '{clang_cl}'\nc_ld = '{lld_link}'\n\
+                 cpp_ld = '{lld_link}'\n"
+            )
+        });
+        let clang_ini = layout.clang_file().display().to_string();
+        // After the machine file: a later native file overrides the earlier.
+        let clang_args = |args: &mut Vec<String>| {
+            args.push("--native-file".into());
+            args.push(clang_ini.clone());
+        };
 
         let mut dav1d_args: Vec<String> = [
             "--default-library=static",
@@ -225,7 +291,45 @@ impl Plan {
             // dav1d linked into it.
             dav1d_args.extend(["--vsenv".into(), "-Db_vscrt=mt".into()]);
         }
+        // No LTO (`b_lto`): rustc's linker links it, see `Plan::dav1d_args`.
         machine_args(&mut dav1d_args);
+
+        // No LTO for libopus either: rustc's linker links it, like dav1d.
+        let opus_args: Vec<String> = if os == Os::Windows {
+            [
+                "-G",
+                "Ninja",
+                "-DCMAKE_BUILD_TYPE=Release",
+                "-DBUILD_SHARED_LIBS=OFF",
+                "-DOPUS_BUILD_PROGRAMS=OFF",
+                "-DOPUS_BUILD_TESTING=OFF",
+                "-DCMAKE_INSTALL_LIBDIR=lib",
+                // griasdi's executable links the C runtime statically, as
+                // for dav1d.
+                "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded",
+            ]
+            .map(String::from)
+            .into_iter()
+            .chain([
+                format!("-DCMAKE_C_COMPILER={}", forward(&layout.clang_cl())),
+                format!("-DCMAKE_INSTALL_PREFIX={}", forward(&layout.opus_prefix())),
+            ])
+            .collect()
+        } else {
+            let mut args: Vec<String> = [
+                "--default-library=static",
+                "--buildtype=release",
+                "--libdir=lib",
+                "-Dpkgconfig.relocatable=true",
+                "-Dextra-programs=disabled",
+                "-Dtests=disabled",
+                "-Ddocs=disabled",
+            ]
+            .map(String::from)
+            .to_vec();
+            machine_args(&mut args);
+            args
+        };
 
         let mut svtav1_args: Vec<String> = [
             "-G",
@@ -234,9 +338,6 @@ impl Plan {
             "-DBUILD_SHARED_LIBS=OFF",
             "-DBUILD_APPS=OFF",
             "-DBUILD_TESTING=OFF",
-            // GCC's LTO objects in a static archive would break the
-            // gst-full link.
-            "-DSVT_AV1_LTO=OFF",
             // The code ends up in `libgstreamer-full-1.0.so`.
             "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
             "-DCMAKE_INSTALL_LIBDIR=lib",
@@ -248,10 +349,21 @@ impl Plan {
             prefix.display().to_string().replace('\\', "/")
         ));
         if os == Os::Windows {
-            // Linked into gstsvtav1.dll, whose GStreamer DLLs use the
-            // DLL C runtime (/MD); dav1d differs (`b_vscrt=mt`) because
-            // it is linked into the exe.
-            svtav1_args.push("-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL".into());
+            svtav1_args.extend([
+                // Linked into gstsvtav1.dll, whose GStreamer DLLs use the
+                // DLL C runtime (/MD); dav1d differs (`b_vscrt=mt`) because
+                // it is linked into the exe.
+                "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL".into(),
+                // The archive is linked by MSVC's link.exe into
+                // gstsvtav1.dll, which cannot read LLVM bitcode.
+                "-DSVT_AV1_LTO=OFF".into(),
+                format!("-DCMAKE_C_COMPILER={}", forward(&layout.clang_cl())),
+                format!("-DCMAKE_CXX_COMPILER={}", forward(&layout.clang_cl())),
+            ]);
+        } else {
+            // The gst-full link and the plugin dylib now run with LTO
+            // (`b_lto`), so the LTO objects in libSvtAv1Enc.a are read.
+            svtav1_args.push("-DSVT_AV1_LTO=ON".into());
         }
         if cross && triple == "aarch64-unknown-linux-gnu" {
             svtav1_args.extend(
@@ -270,6 +382,10 @@ impl Plan {
 
         let mut gst_args: Vec<String> = [
             "--buildtype=release",
+            // Every subproject, on every OS: `/GL` and `/LTCG` with MSVC,
+            // `-flto=auto` with GCC (meson archives with gcc-ar), `-flto`
+            // with Apple clang.
+            "-Db_lto=true",
             "--libdir=lib",
             // The `.pc` files derive their prefix from their own location
             // (`${pcfiledir}`), so the prefix can move after the build.
@@ -322,15 +438,39 @@ impl Plan {
         ]
         .map(String::from)
         .to_vec();
-        gst_args.extend(FFMPEG_OPTIONS.iter().map(|o| format!("-DFFmpeg:{o}")));
+        let mut ffmpeg_options: Vec<String> = FFMPEG_OPTIONS.map(String::from).to_vec();
         if x86_64 {
             // nasm: without it FFmpeg silently drops its SIMD decoders.
-            gst_args.push("-DFFmpeg:x86asm=enabled".into());
+            ffmpeg_options.push("x86asm=enabled".into());
         }
-        gst_args.push(match os {
-            Os::Windows => "-DFFmpeg:w32threads=enabled".into(),
-            _ => "-DFFmpeg:pthreads=enabled".into(),
+        ffmpeg_options.push(match os {
+            Os::Windows => "w32threads=enabled".into(),
+            _ => "pthreads=enabled".into(),
         });
+        let ffmpeg_args = if os == Os::Windows {
+            let mut args: Vec<String> = [
+                "--vsenv",
+                "--buildtype=release",
+                "--default-library=shared",
+                "--libdir=lib",
+                "-Dpkgconfig.relocatable=true",
+                "--wrap-mode=forcefallback",
+                "-Dauto_features=disabled",
+            ]
+            .map(String::from)
+            .to_vec();
+            args.extend(ffmpeg_options.iter().map(|o| format!("-D{o}")));
+            // No `b_lto`: the port's own note (`meson.build`, near its end)
+            // records clang LTO failing on Windows with inline-asm labels,
+            // and its workaround checks the compiler id `clang`, not
+            // `clang-cl`.
+            machine_args(&mut args);
+            clang_args(&mut args);
+            Some(args)
+        } else {
+            gst_args.extend(ffmpeg_options.iter().map(|o| format!("-DFFmpeg:{o}")));
+            None
+        };
         gst_args.push("-Dgst-plugins-bad:svtav1=enabled".into());
         if os != Os::Macos {
             gst_args.push("-Dgst-plugins-bad:nvcodec=enabled".into());
@@ -476,6 +616,9 @@ impl Plan {
             dav1d_args,
             svtav1_args,
             gst_args,
+            ffmpeg_args,
+            clang_file,
+            opus_args,
             layout,
         })
     }
@@ -498,12 +641,15 @@ impl Plan {
             SVTAV1_COMMIT,
             NASM_SOURCE.sha256,
             NASM_WIN64.sha256,
+            LLVM_WIN64.sha256,
             DAV1D.sha256,
+            OPUS.sha256,
             PKGCONF.sha256,
             BUILD_REVISION,
             &patches,
             &self.layout.triple,
             &self.machine_file,
+            self.clang_file.as_deref().unwrap_or_default(),
         ] {
             h.update(part.as_bytes());
             h.update([0]);
@@ -513,6 +659,8 @@ impl Plan {
             .iter()
             .chain(&self.svtav1_args)
             .chain(&self.gst_args)
+            .chain(self.ffmpeg_args.iter().flatten())
+            .chain(&self.opus_args)
         {
             h.update(arg.as_bytes());
             h.update([0]);
@@ -529,7 +677,7 @@ fn cross_file(triple: &str, binaries: &[String]) -> Result<String> {
 [binaries]
 c = 'aarch64-linux-gnu-gcc'
 cpp = 'aarch64-linux-gnu-g++'
-ar = 'aarch64-linux-gnu-ar'
+ar = 'aarch64-linux-gnu-gcc-ar'
 strip = 'aarch64-linux-gnu-strip'
 pkg-config = 'pkg-config'
 

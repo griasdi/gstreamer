@@ -25,7 +25,7 @@ each target `<T>` (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`,
 | Asset | Content |
 |---|---|
 | `gstreamer-<id>-<T>.tar.gz` | One top-level directory `<T>/` with exactly `RELEASE` (the id and a newline), `runtime/` and `link/`, described below. No headers, no tools, no static libraries of GLib and GStreamer. |
-| `gstreamer-<id>-<T>-source.tar.gz` | The corresponding source of those binaries, as exactly one top-level directory `gstreamer-<id>-<T>-source/`: the GStreamer monorepo with the meson subprojects the build fetched, dav1d, SVT-AV1 (and pkgconf on Windows), all with the patches applied, and this repository at the tag. `SOURCES.txt` lists what is where and where it came from. No `.git` directories, no build directories. |
+| `gstreamer-<id>-<T>-source.tar.gz` | The corresponding source of those binaries, as exactly one top-level directory `gstreamer-<id>-<T>-source/`: the GStreamer monorepo with the meson subprojects the build fetched, dav1d, libopus, SVT-AV1 (and pkgconf on Windows), all with the patches applied, and this repository at the tag. `SOURCES.txt` lists what is where and where it came from. No `.git` directories, no build directories. |
 | `SHA256SUMS` | `sha256sum` format, over all assets. |
 
 ### `runtime/`
@@ -72,8 +72,10 @@ What building griasdi needs and nothing else; it is never packaged.
   `-L<T>/link/lib`. `Cflags` is empty: the headers are not shipped, because no
   `-sys` crate of griasdi reads them.
 - `link/lib/`: `libdav1d.a` (on Windows `dav1d.lib`), which griasdi links
-  statically (`gst-plugin-dav1d`); on Windows also the import libraries of the
-  runtime's DLLs.
+  statically (`gst-plugin-dav1d`); `libopus.a` (on Windows `opus.lib`), libopus
+  1.6.1 for griasdi's voice engine, which `opusic-sys` links without its bundled
+  copy (`OPUS_LIB_DIR` set to this directory, `OPUS_LIB_STATIC=true`); on
+  Windows also the import libraries of the runtime's DLLs.
 - Windows: `link/bin/pkgconf.exe`, the pkgconf that cargo's pkg-config probes
   use.
 
@@ -138,13 +140,16 @@ cargo run --release -- bench [--target <T>]
   the job. The clips are downloaded into `target/gstreamer/tools/downloads/`.
 
 What the build needs, besides a stable Rust toolchain, network access to
-GitLab (freedesktop.org, gitlab.com), github.com, videolan.org, nasm.us,
-ariadne.space and PyPI, and `git` and `curl`:
+GitLab (freedesktop.org, gitlab.com), github.com, videolan.org, xiph.org,
+nasm.us, ariadne.space and PyPI, and `git` and `curl`:
 
 - All: [`uv`](https://docs.astral.sh/uv/). It installs a private Python with
   meson, ninja and cmake into `target/gstreamer/tools`; nothing of the system's
   Python is used. nasm is built from its source tarball (Linux, macOS) or is the
-  official binary (Windows).
+  official binary (Windows). Everything is compiled at `-O3` (`/O2` with MSVC
+  and clang-cl) and GStreamer's meson build with link-time optimization; dav1d
+  and libopus, which griasdi's own link takes, and on Windows FFmpeg and
+  SVT-AV1 (`src/plan.rs` says why) without it.
 - Linux: a C and C++ compiler and `make` (`build-essential`), `flex`, `bison`,
   `pkg-config`, and the development packages of what the plugins link
   dynamically: `libasound2-dev`, `libx11-dev`, `libxext-dev`, `libxfixes-dev`,
@@ -159,6 +164,9 @@ ariadne.space and PyPI, and `git` and `curl`:
   and the Visual C++ redistributable, whose DLLs the runtime carries (from
   `VCToolsRedistDir` of the Visual Studio environment, else `System32`).
   pkgconf is built into the tools and shipped as `link/bin/pkgconf.exe`.
+  FFmpeg, SVT-AV1 and libopus are compiled with clang-cl from the pinned LLVM
+  release (downloaded into the tools, about 900 MB): cl.exe rejects the GNU
+  inline assembly of FFmpeg's x86 H.264 and VP9 entropy decoders.
 
 `dist` also needs `git` to see which files of this repository go into the source
 archive: tracked files and untracked ones that are not ignored.

@@ -21,9 +21,10 @@
 //!     in-process, which is fine for a fixed set of plugins.
 //! - `link/` is only for building griasdi and is never packaged: the `.pc`
 //!   files in `link/pkgconfig` that resolve to the runtime, the static dav1d
-//!   in `link/lib`, on Windows the import libraries of the runtime's DLLs and
-//!   `link/bin/pkgconf.exe`, the pkg-config cargo's probes run. No headers: no
-//!   `-sys` crate of griasdi reads them.
+//!   in `link/lib`, the static libopus griasdi's voice links in `link/lib`,
+//!   on Windows the import libraries of the runtime's DLLs and
+//!   `link/bin/pkgconf.exe`, the pkg-config cargo's probes run. No headers:
+//!   no `-sys` crate of griasdi reads them.
 //!
 //! The bundle layout follows how GStreamer finds itself, so the app needs no
 //! environment variables (setting them is `unsafe` in edition 2024, which
@@ -158,7 +159,8 @@ fn stage_linux(prefix: &Path, runtime: &Path, link: &Path, triple: &str) -> Resu
             &pkgconfig::shim_pc(name, &module.version, LIBDIR_LINUX),
         )?;
     }
-    stage_dav1d(prefix, link, &pkgconfig)
+    stage_dav1d(prefix, link, &pkgconfig)?;
+    stage_opus(prefix, link, Os::Linux)
 }
 
 /// The static dav1d: its `.pc` file and `libdav1d.a`.
@@ -171,6 +173,19 @@ fn stage_dav1d(prefix: &Path, link: &Path, pkgconfig: &Path) -> Result<()> {
     let library = prefix.join("lib/libdav1d.a");
     ensure!(library.is_file(), "{} is missing", library.display());
     copy_file(&library, &link.join("lib/libdav1d.a"))
+}
+
+/// The static libopus griasdi's voice links (`opusic-sys` with
+/// `OPUS_LIB_DIR=link/lib`), from its own install tree in the prefix. No
+/// `.pc` file: `opusic-sys` does not read one.
+fn stage_opus(prefix: &Path, link: &Path, os: Os) -> Result<()> {
+    let name = match os {
+        Os::Windows => "opus.lib",
+        Os::Linux | Os::Macos => "libopus.a",
+    };
+    let library = prefix.join("opus/lib").join(name);
+    ensure!(library.is_file(), "{} is missing", library.display());
+    copy_file(&library, &link.join("lib").join(name))
 }
 
 // -------------------------------------------------------------- Windows
@@ -268,7 +283,8 @@ fn stage_windows(
     }
     // The pkg-config cargo's probes run against the `.pc` files.
     ensure!(pkgconf.is_file(), "{} was not built", pkgconf.display());
-    copy_file(pkgconf, &link.join("bin/pkgconf.exe"))
+    copy_file(pkgconf, &link.join("bin/pkgconf.exe"))?;
+    stage_opus(prefix, link, Os::Windows)
 }
 
 // ---------------------------------------------------------------- macOS
@@ -374,7 +390,8 @@ fn stage_macos(prefix: &Path, runtime: &Path, link: &Path, triple: &str) -> Resu
     }
     let library = lib.join("libdav1d.a");
     ensure!(library.is_file(), "{} is missing", library.display());
-    copy_file(&library, &link.join("lib/libdav1d.a"))
+    copy_file(&library, &link.join("lib/libdav1d.a"))?;
+    stage_opus(prefix, link, Os::Macos)
 }
 
 // --------------------------------------------------------------- shared
@@ -643,6 +660,7 @@ mod tests {
         let prefix = scratch.0.join("prefix");
         put(&prefix.join("lib/libgstreamer-full-1.0.so"), "so");
         put(&prefix.join("lib/libdav1d.a"), "a");
+        put(&prefix.join("opus/lib/libopus.a"), "a");
         put(&prefix.join("bin/gst-launch-1.0"), "tool");
         put(&prefix.join("include/gst/gst.h"), "header");
         put(&prefix.join("lib/libglib-2.0.a"), "static glib");
@@ -678,6 +696,7 @@ mod tests {
             link_files,
             [
                 "lib/libdav1d.a",
+                "lib/libopus.a",
                 "pkgconfig/dav1d.pc",
                 "pkgconfig/gio-2.0.pc",
                 "pkgconfig/glib-2.0.pc",
@@ -754,6 +773,7 @@ mod tests {
             },
             "-ldav1d",
         );
+        put(&prefix.join("opus/lib/opus.lib"), "static library");
         write_licenses(&prefix);
         prefix
     }
@@ -802,6 +822,7 @@ mod tests {
         // The system's `ws2_32` that a module names has no import library here.
         assert!(!link_files.iter().any(|f| f.contains("ws2_32")));
         assert!(link_files.contains("bin/pkgconf.exe"));
+        assert!(link_files.contains("lib/opus.lib"));
         let glib = fs::read_to_string(link.join("pkgconfig/glib-2.0.pc")).unwrap();
         assert!(glib.contains("libdir=${prefix}/link/lib\n"));
         assert!(glib.contains("Libs: -L${libdir} -lglib-2.0 -lintl\n"));
@@ -833,6 +854,7 @@ mod tests {
         let prefix = scratch.0.join("prefix");
         put(&prefix.join("lib/libgstreamer-full-1.0.so"), "so");
         put(&prefix.join("lib/libdav1d.a"), "a");
+        put(&prefix.join("opus/lib/libopus.a"), "a");
         write_pc_files(&prefix, &|_| "-lx".to_owned(), "-ldav1d");
         let error = stage_linux(
             &prefix,

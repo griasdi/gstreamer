@@ -1,6 +1,6 @@
 //! The build tools: a private Python with meson, ninja and cmake from PyPI
-//! (installed with `uv`), nasm, and on Windows pkgconf; and the pinned
-//! downloads they and dav1d are made from.
+//! (installed with `uv`), nasm, and on Windows pkgconf and LLVM's clang-cl;
+//! and the pinned downloads they, dav1d and libopus are made from.
 
 use std::ffi::OsString;
 use std::fs;
@@ -10,7 +10,8 @@ use std::process::Command;
 use anyhow::{Context, Result, bail, ensure};
 
 use crate::pins::{
-    CMAKE, Download, MESON, NASM_SOURCE, NASM_WIN64, NINJA, PKGCONF, PYTHON, TRUSTSTORE, VSENV_RUN,
+    CMAKE, Download, LLVM_WIN64, MESON, NASM_SOURCE, NASM_WIN64, NINJA, PKGCONF, PYTHON,
+    TRUSTSTORE, VSENV_RUN,
 };
 use crate::plan::{Os, Plan};
 use crate::util::{available, git_checkout_env, run, sha256_hex};
@@ -168,6 +169,12 @@ pub fn tools(plan: &Plan) -> Result<Tools> {
     };
     if plan.os == Os::Windows {
         pkgconf_windows(&dir, &tools)?;
+        llvm_windows(&dir, &tools.python)?;
+        ensure!(
+            plan.layout.clang_cl().is_file(),
+            "{} is missing from the LLVM release",
+            plan.layout.clang_cl().display()
+        );
     }
     Ok(tools)
 }
@@ -252,6 +259,19 @@ fn nasm_windows(dir: &Path, python: &Path) -> Result<PathBuf> {
     let unpacked = fetch(dir, &NASM_WIN64, python)?;
     fs::write(&stamp, NASM_WIN64.sha256)?;
     Ok(unpacked)
+}
+
+/// The official LLVM release for Windows, for clang-cl; unpacked into
+/// `dir/src` ([`crate::plan::Layout::clang_cl`]).
+fn llvm_windows(dir: &Path, python: &Path) -> Result<()> {
+    let unpacked = dir.join("src").join(LLVM_WIN64.dir);
+    let stamp = unpacked.join(".griasdi-pin");
+    if fs::read_to_string(&stamp).ok().as_deref() == Some(LLVM_WIN64.sha256) {
+        return Ok(());
+    }
+    let unpacked = fetch(dir, &LLVM_WIN64, python)?;
+    fs::write(unpacked.join(".griasdi-pin"), LLVM_WIN64.sha256)?;
+    Ok(())
 }
 
 /// pkgconf built with meson into `tools/pkgconf`; a Windows release ships

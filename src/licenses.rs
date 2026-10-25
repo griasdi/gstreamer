@@ -12,9 +12,11 @@
 //!   every directory between it and a compiled source file, so a library
 //!   bundled inside a module (one with a license file of its own) is carried
 //!   too.
-//! - dav1d, SVT-AV1 and (Windows) pkgconf are built by this recipe from their
-//!   own trees: the license files directly in the tree, and in each
-//!   directory of `third_party/` of SVT-AV1.
+//! - dav1d, libopus, SVT-AV1 and (Windows) pkgconf are built by this recipe
+//!   from their own trees: the license files directly in the tree, and in
+//!   each directory of `third_party/` of SVT-AV1.
+//! - Windows: FFmpeg's meson port, built on its own with clang-cl, from the
+//!   introspection of its build like a subproject of the monorepo.
 //!
 //! A component without a license text is an error, so a subproject that a
 //! GStreamer bump brings in cannot be shipped without one.
@@ -27,7 +29,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::Value;
 
-use crate::pins::{DAV1D, PKGCONF, SVTAV1_TAG};
+use crate::pins::{DAV1D, OPUS, PKGCONF, SVTAV1_TAG};
 use crate::plan::{Os, Plan};
 
 /// A component of the prefix and the license files it carries, relative to
@@ -80,9 +82,20 @@ const BUILD_TOOLS: [&str; 4] = [
 pub fn collect(plan: &Plan) -> Result<Vec<Component>> {
     let layout = &plan.layout;
     let mut sources = gstreamer_sources(&layout.src, &layout.build.join("gstreamer"))?;
+    if plan.ffmpeg_args.is_some() {
+        sources.push(ffmpeg_source(
+            &layout.src.join("subprojects/FFmpeg"),
+            &layout.build.join("ffmpeg"),
+        )?);
+    }
     sources.push(Source {
         name: DAV1D.dir.to_owned(),
         dir: layout.dav1d_src(),
+        also: BTreeSet::new(),
+    });
+    sources.push(Source {
+        name: OPUS.dir.to_owned(),
+        dir: layout.opus_src(),
         also: BTreeSet::new(),
     });
     sources.push(Source {
@@ -119,23 +132,57 @@ pub fn collect(plan: &Plan) -> Result<Vec<Component>> {
     Ok(components)
 }
 
+/// The file `name` of meson's introspection (`meson-info/`) of `build`.
+fn read_info(build: &Path, name: &str) -> Result<Value> {
+    let path = build.join("meson-info").join(name);
+    let text = fs::read_to_string(&path).with_context(|| {
+        format!(
+            "read {}: the meson build directory is gone; remove .installed and .recipe from \
+             the prefix to build again",
+            path.display()
+        )
+    })?;
+    serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))
+}
+
+/// Windows: FFmpeg's meson port, built on its own in `build`
+/// ([`Plan::ffmpeg_args`]), as one component named like the subproject, so
+/// that [`ONLY`] applies to it.
+fn ffmpeg_source(src: &Path, build: &Path) -> Result<Source> {
+    let files = string_list(&read_info(build, "intro-buildsystem_files.json")?);
+    let sources = compiled_sources(&read_info(build, "intro-targets.json")?);
+    let mut roots = vec![src.to_owned()];
+    if let Ok(canonical) = fs::canonicalize(src) {
+        roots.push(canonical);
+    }
+    for root in &roots {
+        if let Some(file) = files
+            .iter()
+            .find(|f| Path::new(f).starts_with(root.join("subprojects")))
+        {
+            bail!(
+                "the FFmpeg build configured a subproject of its own ({file}); carry its license \
+                 in src/licenses.rs"
+            );
+        }
+    }
+    let also = roots
+        .iter()
+        .map(|root| compiled_dirs(root, &sources))
+        .find(|dirs| !dirs.is_empty())
+        .unwrap_or_default();
+    Ok(Source {
+        name: "FFmpeg".to_owned(),
+        dir: src.to_owned(),
+        also,
+    })
+}
+
 /// The monorepo's modules and subprojects as meson configured and compiled
 /// them in `build`.
 fn gstreamer_sources(src: &Path, build: &Path) -> Result<Vec<Source>> {
-    let info = build.join("meson-info");
-    let read = |name: &str| -> Result<Value> {
-        let path = info.join(name);
-        let text = fs::read_to_string(&path).with_context(|| {
-            format!(
-                "read {}: the meson build directory is gone; remove .installed and .recipe \
-                 from the prefix to build again",
-                path.display()
-            )
-        })?;
-        serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))
-    };
-    let files = string_list(&read("intro-buildsystem_files.json")?);
-    let sources = compiled_sources(&read("intro-targets.json")?);
+    let files = string_list(&read_info(build, "intro-buildsystem_files.json")?);
+    let sources = compiled_sources(&read_info(build, "intro-targets.json")?);
     // meson may have been given the source directory through a symlink.
     let mut roots = vec![src.to_owned()];
     if let Ok(canonical) = fs::canonicalize(src) {

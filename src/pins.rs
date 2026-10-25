@@ -74,6 +74,25 @@ pub const PKGCONF: Download = Download {
     sha256: "c926ff491cbd9a331a589160811bd97ab1749b4d5198a519338f2cdfabe6940a",
     dir: "pkgconf-3.0.7",
 };
+/// LLVM's Windows release, for clang-cl: FFmpeg, SVT-AV1 and the libopus of
+/// griasdi's voice are compiled with it on Windows. cl.exe rejects GNU
+/// inline assembly, which turns off FFmpeg's x86 H.264 CABAC and VP9 range
+/// decoders. The Visual Studio component is not installed on the build
+/// machines, so the compiler is a pinned download like nasm.
+pub const LLVM_WIN64: Download = Download {
+    url: "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.4/clang+llvm-23.1.4-x86_64-pc-windows-msvc.tar.xz",
+    sha256: "854bffcfc84528e0ee92490ff5c178920abd358a79c3e98f053e41e3e8e4c6d2",
+    dir: "clang+llvm-23.1.4-x86_64-pc-windows-msvc",
+};
+/// libopus for griasdi's voice engine, which calls it directly
+/// (`opusic-sys` without its bundled copy). 1.6.1 because `opusic-sys`
+/// 0.7.5's bindings are generated against its bundled 1.6.1. GStreamer's
+/// `opus` plugin keeps the monorepo's own `opus.wrap`.
+pub const OPUS: Download = Download {
+    url: "https://downloads.xiph.org/releases/opus/opus-1.6.1.tar.gz",
+    sha256: "6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1",
+    dir: "opus-1.6.1",
+};
 
 /// The targets GStreamer is built for.
 pub const TARGETS: [&str; 4] = [

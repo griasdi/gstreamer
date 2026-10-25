@@ -43,8 +43,8 @@ use anyhow::{Context, Result, ensure};
 use crate::finish;
 use crate::patches;
 use crate::pins::{
-    DAV1D, FFMPEG_COMMIT, GIT_WRAPS, GST_COMMIT, GST_REPO, GST_TAG, ORC_COMMIT, PYTHON_PLACEHOLDER,
-    SVTAV1_COMMIT, SVTAV1_REPO, SVTAV1_TAG, TARGETS,
+    DAV1D, FFMPEG_COMMIT, GIT_WRAPS, GST_COMMIT, GST_REPO, GST_TAG, OPUS, ORC_COMMIT,
+    PYTHON_PLACEHOLDER, SVTAV1_COMMIT, SVTAV1_REPO, SVTAV1_TAG, TARGETS,
 };
 use crate::plan::{Layout, Os, Plan, host_triple};
 use crate::tools::{Tools, fetch, jobs, tools};
@@ -117,9 +117,16 @@ pub fn build(target: Option<&str>) -> Result<Layout> {
             layout.machine_file(),
             plan.machine_file.replace(PYTHON_PLACEHOLDER, &python),
         )?;
+        if let Some(clang_file) = &plan.clang_file {
+            fs::write(layout.clang_file(), clang_file)?;
+        }
         build_dav1d(&plan, &tools)?;
+        build_opus(&plan, &tools)?;
         build_svtav1(&plan, &tools)?;
         fetch_gstreamer(&plan, &tools)?;
+        if let Some(args) = &plan.ffmpeg_args {
+            build_ffmpeg(&plan, &tools, args)?;
+        }
         build_gstreamer(&plan, &tools)?;
         fs::write(&installed, &stamp)?;
     }
@@ -147,6 +154,79 @@ fn build_dav1d(plan: &Plan, tools: &Tools) -> Result<()> {
         if lib.join("libdav1d.a").is_file() && !lib.join("dav1d.lib").exists() {
             fs::copy(lib.join("libdav1d.a"), lib.join("dav1d.lib"))?;
         }
+    }
+    Ok(())
+}
+
+/// The static libopus griasdi's voice engine links (`opusic-sys` with
+/// `OPUS_LIB_DIR`), in its own install tree ([`Layout::opus_prefix`]): with
+/// CMake and clang-cl on Windows, with meson elsewhere ([`Plan::opus_args`]).
+fn build_opus(plan: &Plan, tools: &Tools) -> Result<()> {
+    let layout = &plan.layout;
+    let src = fetch(&layout.tools(), &OPUS, &tools.python)?;
+    let build = layout.build.join("opus");
+    // libopus falls back to its plain C paths without telling when the
+    // compiler lacks the intrinsics. meson writes what it found into
+    // `config.h` (opus 1.6.1 `meson.build`), CMake passes it as defines,
+    // which are on the compile lines of `build.ninja`.
+    type Defined = fn(&str, &str) -> bool;
+    let (configured, defined): (PathBuf, Defined) = if plan.os == Os::Windows {
+        run(tools
+            .cmake()
+            .arg("-S")
+            .arg(&src)
+            .arg("-B")
+            .arg(&build)
+            .args(&plan.opus_args))?;
+        (build.join("build.ninja"), |text, name| {
+            text.split_whitespace()
+                .any(|word| word == format!("-D{name}"))
+        })
+    } else {
+        run(tools
+            .meson()
+            .arg("setup")
+            .arg(&build)
+            .arg(&src)
+            .arg(format!("--prefix={}", layout.opus_prefix().display()))
+            .args(&plan.opus_args))?;
+        (build.join("config.h"), |text, name| {
+            text.lines()
+                .any(|line| line.trim() == format!("#define {name} 1"))
+        })
+    };
+    let config = fs::read_to_string(&configured)
+        .with_context(|| format!("read {}", configured.display()))?;
+    let required: &[(&str, &str)] = if plan.x86_64 {
+        &[
+            (
+                "OPUS_HAVE_RTCD",
+                "libopus was configured without run-time CPU detection",
+            ),
+            (
+                "OPUS_X86_MAY_HAVE_AVX2",
+                "libopus was configured without run-time AVX2 dispatch",
+            ),
+        ]
+    } else {
+        &[(
+            "OPUS_ARM_MAY_HAVE_NEON_INTR",
+            "libopus was configured without NEON intrinsics",
+        )]
+    };
+    for (define, error) in required {
+        ensure!(defined(&config, define), "{error}");
+    }
+    if plan.os == Os::Windows {
+        run(tools
+            .cmake()
+            .arg("--build")
+            .arg(&build)
+            .arg("--parallel")
+            .arg(jobs().to_string()))?;
+        run(tools.cmake().arg("--install").arg(&build))?;
+    } else {
+        run(tools.meson().arg("install").arg("-C").arg(&build))?;
     }
     Ok(())
 }
@@ -292,20 +372,80 @@ fn git_head(dir: &Path) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
+/// Removes the files `rels` below `dir` that exist.
+fn remove_files(dir: &Path, rels: &[&str]) -> Result<()> {
+    for rel in rels {
+        let path = dir.join(rel);
+        if path.exists() {
+            fs::remove_file(&path).with_context(|| format!("remove {}", path.display()))?;
+        }
+    }
+    Ok(())
+}
+
+/// Windows: FFmpeg's meson port on its own, compiled with clang-cl
+/// ([`Plan::ffmpeg_args`]), installed into the prefix, where the GStreamer
+/// build finds it through pkg-config.
+fn build_ffmpeg(plan: &Plan, tools: &Tools, args: &[String]) -> Result<()> {
+    let layout = &plan.layout;
+    let src = layout.src.join("subprojects/FFmpeg");
+    // As in `build_gstreamer`: the nasm of the machine file, not the wrap's.
+    remove_files(&src, &["subprojects/nasm.wrap"])?;
+    let build = layout.build.join("ffmpeg");
+    run(tools
+        .meson()
+        .arg("setup")
+        .arg(&build)
+        .arg(&src)
+        .arg(format!("--prefix={}", layout.prefix.display()))
+        .args(args))?;
+    check_ffmpeg_config(plan, &build.join("config.h"))?;
+    run(tools.meson().arg("compile").arg("-C").arg(&build))?;
+    run(tools.meson().arg("install").arg("-C").arg(&build))?;
+    Ok(())
+}
+
+/// FFmpeg falls back to plain C without telling when nasm, inline assembly
+/// or NEON is missing; its decoders would then be several times slower.
+fn check_ffmpeg_config(plan: &Plan, config: &Path) -> Result<()> {
+    let text = fs::read_to_string(config).with_context(|| format!("read {}", config.display()))?;
+    let required: &[(&str, &str)] = if plan.x86_64 {
+        &[
+            (
+                "#define HAVE_X86ASM 1",
+                "FFmpeg was configured without nasm",
+            ),
+            (
+                "#define HAVE_INLINE_ASM 1",
+                "FFmpeg was configured without inline assembly: its H.264 and VP9 entropy \
+                 decoders would be plain C",
+            ),
+        ]
+    } else {
+        &[("#define HAVE_NEON 1", "FFmpeg was configured without NEON")]
+    };
+    for (define, error) in required {
+        ensure!(text.contains(define), "{error}");
+    }
+    Ok(())
+}
+
 fn build_gstreamer(plan: &Plan, tools: &Tools) -> Result<()> {
     let layout = &plan.layout;
     // FFmpeg's nasm wrap only downloads unpinned binaries (and none on
     // Linux), and `--wrap-mode=forcefallback` would prefer it over the nasm
     // the machine file names; without the wrap meson takes that one.
-    for wrap in [
+    let mut wraps = vec![
         "subprojects/nasm.wrap",
         "subprojects/FFmpeg/subprojects/nasm.wrap",
-    ] {
-        let path = layout.src.join(wrap);
-        if path.exists() {
-            fs::remove_file(&path)?;
-        }
+    ];
+    if plan.ffmpeg_args.is_some() {
+        // The only provider of `libavcodec`: without it, forcefallback looks
+        // the modules up with pkg-config and finds the clang-cl build in the
+        // prefix (`--pkg-config-path`).
+        wraps.push("subprojects/FFmpeg.wrap");
     }
+    remove_files(&layout.src, &wraps)?;
     let build = layout.build.join("gstreamer");
     run(tools
         .meson()
@@ -314,14 +454,14 @@ fn build_gstreamer(plan: &Plan, tools: &Tools) -> Result<()> {
         .arg(&layout.src)
         .arg(format!("--prefix={}", layout.prefix.display()))
         .args(&plan.gst_args))?;
-    if plan.x86_64 {
-        // FFmpeg falls back to plain C without telling when nasm is missing;
-        // its decoders would then be several times slower.
-        let config = fs::read_to_string(build.join("subprojects/FFmpeg/config.h"))?;
+    if plan.ffmpeg_args.is_some() {
         ensure!(
-            config.contains("#define HAVE_X86ASM 1"),
-            "FFmpeg was configured without nasm"
+            !build.join("subprojects/FFmpeg").exists(),
+            "the GStreamer build configured its own FFmpeg instead of the clang-cl build in the \
+             prefix"
         );
+    } else {
+        check_ffmpeg_config(plan, &build.join("subprojects/FFmpeg/config.h"))?;
     }
     run(tools.meson().arg("compile").arg("-C").arg(&build))?;
     run(tools.meson().arg("install").arg("-C").arg(&build))?;

@@ -8,8 +8,8 @@
 //!   those binaries, as exactly one top-level directory
 //!   `gstreamer-<id>-<target>-source/`: the source trees that were built
 //!   (the monorepo with the meson subprojects the build fetched, dav1d,
-//!   SVT-AV1, and pkgconf on Windows), the patches already applied, and this
-//!   recipe at the release's tag. No `.git` directories, no build
+//!   libopus, SVT-AV1, and pkgconf on Windows), the patches already applied,
+//!   and this recipe at the release's tag. No `.git` directories, no build
 //!   directories, no download caches.
 //!
 //! Entries are sorted and carry no user or group; modes are normalised to
@@ -31,7 +31,7 @@ use tar::{Builder, EntryType, Header, HeaderMode};
 use crate::build::{build, existing};
 use crate::patches;
 use crate::pins::{
-    DAV1D, FFMPEG_COMMIT, FFMPEG_REPO, GST_COMMIT, GST_REPO, GST_TAG, PKGCONF, SVTAV1_COMMIT,
+    DAV1D, FFMPEG_COMMIT, FFMPEG_REPO, GST_COMMIT, GST_REPO, GST_TAG, OPUS, PKGCONF, SVTAV1_COMMIT,
     SVTAV1_REPO, SVTAV1_TAG,
 };
 use crate::plan::{Layout, Os};
@@ -97,6 +97,7 @@ fn add_sources(archive: &mut Archive, layout: &Layout, id: &str, out: &Path) -> 
     let mut trees = vec![
         (format!("gstreamer-{GST_TAG}"), layout.src.clone()),
         (DAV1D.dir.to_owned(), layout.dav1d_src()),
+        (OPUS.dir.to_owned(), layout.opus_src()),
         (
             format!("SVT-AV1-{}", SVTAV1_TAG.trim_start_matches('v')),
             layout.svtav1_src(),
@@ -214,6 +215,9 @@ what it contains and under which licenses.
   {dav1d}/
       dav1d, the release tarball {dav1d_url}
       (SHA-256 {dav1d_sha})
+  {opus}/
+      libopus, the release tarball {opus_url}
+      (SHA-256 {opus_sha}), the static library in link/lib that griasdi's voice links
   SVT-AV1-{svtav1}/
       SVT-AV1, {SVTAV1_REPO} at tag {SVTAV1_TAG} (commit {SVTAV1_COMMIT})
 {pkgconf}  recipe/
@@ -229,6 +233,9 @@ patches. README.md lists what the build needs.
         dav1d = DAV1D.dir,
         dav1d_url = DAV1D.url,
         dav1d_sha = DAV1D.sha256,
+        opus = OPUS.dir,
+        opus_url = OPUS.url,
+        opus_sha = OPUS.sha256,
         tag = release_tag(),
     )
 }
