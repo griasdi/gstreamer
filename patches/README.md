@@ -1,6 +1,6 @@
 # Source patches
 
-The recipe changes upstream's source in three places. Each change is a unified
+The recipe changes upstream's source in four places. Each change is a unified
 diff in this directory, applied by the recipe with `git apply` to the GStreamer
 monorepo checkout (`target/gstreamer/src-<target>/`) after the meson
 subprojects it touches are unpacked (`src/patches.rs`). The paths in a patch are
@@ -17,15 +17,18 @@ ignores) says what is wrong without it and why the change fixes it.
 | Patch | Changes | Targets | License of the changed file |
 |---|---|---|---|
 | `gst-plugins-bad-svtav1enc-low-delay.patch` | `ext/svtav1/gstsvtav1enc.c` of gst-plugins-bad 1.28.7: the packet loop no longer blocks in SVT-AV1's low-delay mode | all | LGPL-2.1-or-later |
+| `gst-plugins-bad-nvcodec-av1-temporal-layers.patch` | `sys/nvcodec/` of gst-plugins-bad 1.28.8: NVENC API 13.0 (SDK 13.0 `nvEncodeAPI.h`) and `nvav1enc`'s `temporal-layers` | all (built on Linux and Windows) | LGPL-2.1-or-later; `nvEncodeAPI.h` MIT |
 | `libva-static-library-and-header-copy.patch` | `va/meson.build` of libva 2.22.0: static libraries that follow `--default-library`, and the headers copied at setup | Linux | MIT |
 | `glib-macos-no-pipe2.patch` | `glib/glib-unixprivate.h` of GLib 2.86.3: no `pipe2` on macOS, where the SDK declares it but older systems lack it | macOS | LGPL-2.1-or-later |
 
 ## License
 
 Each patch is under the license of the file it modifies: GLib and
-gst-plugins-bad are LGPL-2.1-or-later, libva is MIT. The patches are not under
-the `MIT OR Apache-2.0` license of the recipe's code, and the source archive of
-a release carries them applied, together with the full source they modify.
+gst-plugins-bad are LGPL-2.1-or-later, libva is MIT, and NVIDIA's
+`nvEncodeAPI.h` in gst-plugins-bad is MIT (NVIDIA's notice in the file). The
+patches are not under the `MIT OR Apache-2.0` license of the recipe's code, and
+the source archive of a release carries them applied, together with the full
+source they modify.
 
 ## Changing a patch
 

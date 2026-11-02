@@ -37,11 +37,12 @@ pub fn available(program: &str) -> bool {
         .is_ok_and(|o| o.status.success())
 }
 
-/// Makes every `git` that `command` starts (the tool's own clones, and the
-/// ones meson makes for the FFmpeg and orc subprojects) check files out as
-/// upstream committed them: no line-ending conversion, whatever the machine's
-/// git configuration says (Git for Windows defaults to `core.autocrlf=true`).
-/// The patches apply to those bytes and the source archive carries them.
+/// Makes every `git` that `command` starts (the tool's own clones, its
+/// `git apply` of the patches, and the ones meson makes for the FFmpeg and
+/// orc subprojects) check files out and read them as upstream committed them:
+/// no line-ending conversion, whatever the machine's git configuration says
+/// (Git for Windows defaults to `core.autocrlf=true`). The patches apply to
+/// those bytes and the source archive carries them.
 pub fn git_checkout_env(command: &mut Command) -> &mut Command {
     command.envs([
         ("GIT_CONFIG_COUNT", "2"),

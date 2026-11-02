@@ -13,7 +13,7 @@ use anyhow::{Context, Result, ensure};
 use sha2::{Digest, Sha256};
 
 use crate::plan::Os;
-use crate::util::{hex, root, run};
+use crate::util::{git_checkout_env, hex, root, run};
 
 /// One patch of `patches/`.
 pub struct Patch {
@@ -28,9 +28,14 @@ pub struct Patch {
 }
 
 /// The paths in a patch are relative to the root of the monorepo checkout.
-pub const PATCHES: [Patch; 3] = [
+pub const PATCHES: [Patch; 4] = [
     Patch {
         file: "gst-plugins-bad-svtav1enc-low-delay.patch",
+        os: None,
+        subproject: None,
+    },
+    Patch {
+        file: "gst-plugins-bad-nvcodec-av1-temporal-layers.patch",
         os: None,
         subproject: None,
     },
@@ -100,7 +105,7 @@ pub fn apply(src: &Path, patch: &Patch) -> Result<()> {
         src.display(),
         String::from_utf8_lossy(&check.stderr).trim()
     );
-    run(Command::new("git")
+    run(git_checkout_env(&mut Command::new("git"))
         .arg("-C")
         .arg(src)
         .args(["apply", "--whitespace=nowarn"])
@@ -114,7 +119,7 @@ fn has_crlf(text: &[u8]) -> bool {
 
 /// `git apply <flags> <file>` in `src`, with its output.
 fn git_apply(src: &Path, file: &Path, flags: &[&str]) -> Result<Output> {
-    Command::new("git")
+    git_checkout_env(&mut Command::new("git"))
         .arg("-C")
         .arg(src)
         .args(["apply", "--whitespace=nowarn"])
@@ -138,17 +143,22 @@ mod tests {
             files(Os::Linux),
             [
                 "gst-plugins-bad-svtav1enc-low-delay.patch",
+                "gst-plugins-bad-nvcodec-av1-temporal-layers.patch",
                 "libva-static-library-and-header-copy.patch"
             ]
         );
         assert_eq!(
             files(Os::Windows),
-            ["gst-plugins-bad-svtav1enc-low-delay.patch"]
+            [
+                "gst-plugins-bad-svtav1enc-low-delay.patch",
+                "gst-plugins-bad-nvcodec-av1-temporal-layers.patch"
+            ]
         );
         assert_eq!(
             files(Os::Macos),
             [
                 "gst-plugins-bad-svtav1enc-low-delay.patch",
+                "gst-plugins-bad-nvcodec-av1-temporal-layers.patch",
                 "glib-macos-no-pipe2.patch"
             ]
         );

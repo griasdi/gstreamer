@@ -205,7 +205,8 @@ The recipe, the code of this repository, is under either of the
 at your option.
 
 The patches in `patches/` are under the licenses of the files they modify (GLib
-and gst-plugins-bad: LGPL-2.1-or-later; libva: MIT), see
+and gst-plugins-bad: LGPL-2.1-or-later; libva: MIT; NVIDIA's `nvEncodeAPI.h`:
+MIT), see
 [patches/README.md](patches/README.md).
 
 The libraries of a release are made of other people's code and stay under their
