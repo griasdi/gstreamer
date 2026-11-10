@@ -16,8 +16,8 @@ ignores) says what is wrong without it and why the change fixes it.
 
 | Patch | Changes | Targets | License of the changed file |
 |---|---|---|---|
-| `gst-plugins-bad-svtav1enc-low-delay.patch` | `ext/svtav1/gstsvtav1enc.c` of gst-plugins-bad 1.28.7: the packet loop no longer blocks in SVT-AV1's low-delay mode | all | LGPL-2.1-or-later |
-| `gst-plugins-bad-nvcodec-av1-temporal-layers.patch` | `sys/nvcodec/` of gst-plugins-bad 1.28.8: NVENC API 13.0 (SDK 13.0 `nvEncodeAPI.h`) and `nvav1enc`'s `temporal-layers` | all (built on Linux and Windows) | LGPL-2.1-or-later; `nvEncodeAPI.h` MIT |
+| `gst-plugins-bad-svtav1enc-low-delay.patch` | `ext/svtav1/gstsvtav1enc.c` of gst-plugins-bad 1.28.9: the packet loop no longer blocks in SVT-AV1's low-delay mode | all | LGPL-2.1-or-later |
+| `gst-plugins-bad-nvcodec-av1-temporal-layers.patch` | `sys/nvcodec/` of gst-plugins-bad 1.28.9: NVENC API 13.0 (SDK 13.0 `nvEncodeAPI.h`) and `nvav1enc`'s `temporal-layers` | all (built on Linux and Windows) | LGPL-2.1-or-later; `nvEncodeAPI.h` MIT |
 | `libva-static-library-and-header-copy.patch` | `va/meson.build` of libva 2.22.0: static libraries that follow `--default-library`, and the headers copied at setup | Linux | MIT |
 | `glib-macos-no-pipe2.patch` | `glib/glib-unixprivate.h` of GLib 2.86.3: no `pipe2` on macOS, where the SDK declares it but older systems lack it | macOS | LGPL-2.1-or-later |
 

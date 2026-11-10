@@ -5,8 +5,8 @@
 //! again, [`crate::plan::BUILD_REVISION`] or another input of its stamp).
 
 /// The GStreamer release: tag and the commit it must resolve to.
-pub const GST_TAG: &str = "1.28.8";
-pub const GST_COMMIT: &str = "1b2a95a1b72787cda146b46df9605b168e5b683b";
+pub const GST_TAG: &str = "1.28.9";
+pub const GST_COMMIT: &str = "3ced45da096032bdac8e0922faa492a079c3180e";
 pub const GST_REPO: &str = "https://gitlab.freedesktop.org/gstreamer/gstreamer.git";
 /// GStreamer's meson port of FFmpeg 7.1.1: the head of branch
 /// `meson-7.1.1` that `subprojects/FFmpeg.wrap` names.
@@ -21,14 +21,14 @@ pub const NINJA: &str = "1.13.2";
 /// Lets meson's downloads use the operating system's certificate store; the
 /// Python uv installs on Windows has no other.
 pub const TRUSTSTORE: &str = "0.10.5";
-/// CMake from PyPI, like meson and ninja; SVT-AV1 4.2.0 needs at least 3.16.
+/// CMake from PyPI, like meson and ninja; SVT-AV1 4.3.0 needs at least 3.16.
 pub const CMAKE: &str = "4.4.4";
 /// SVT-AV1 (svtav1enc), built with CMake into the prefix on every operating
 /// system. A git clone checked against the commit, like the monorepo:
 /// GitLab's generated archives carry no stable SHA-256.
 pub const SVTAV1_REPO: &str = "https://gitlab.com/AOMediaCodec/SVT-AV1.git";
-pub const SVTAV1_TAG: &str = "v4.2.0";
-pub const SVTAV1_COMMIT: &str = "9292ec8e32bce26f781f277ec8739b53426c4300";
+pub const SVTAV1_TAG: &str = "v4.3.0";
+pub const SVTAV1_COMMIT: &str = "e3d63405f9ba8219913a7276c2c47d10e5d022fe";
 /// Runs its arguments as a command inside the MSVC environment, which meson
 /// finds for itself (`mesonbuild/utils/vsenv.py` of meson 1.12.1); CMake
 /// needs it on Windows the same way meson's `--vsenv` does. `setup_vsenv`
@@ -80,9 +80,9 @@ pub const PKGCONF: Download = Download {
 /// decoders. The Visual Studio component is not installed on the build
 /// machines, so the compiler is a pinned download like nasm.
 pub const LLVM_WIN64: Download = Download {
-    url: "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.4/clang+llvm-23.1.4-x86_64-pc-windows-msvc.tar.xz",
-    sha256: "854bffcfc84528e0ee92490ff5c178920abd358a79c3e98f053e41e3e8e4c6d2",
-    dir: "clang+llvm-23.1.4-x86_64-pc-windows-msvc",
+    url: "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.5/clang+llvm-23.1.5-x86_64-pc-windows-msvc.tar.xz",
+    sha256: "62fdada7f6fa2b73856486dfbbdba3d2c1882991621615bcb55c60207611c6d4",
+    dir: "clang+llvm-23.1.5-x86_64-pc-windows-msvc",
 };
 /// libopus for griasdi's voice engine, which calls it directly
 /// (`opusic-sys` without its bundled copy). 1.6.1 because `opusic-sys`

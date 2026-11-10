@@ -6,7 +6,7 @@
 # `temporal_id`, and the frames of the upper layer are not referenced, so a
 # receiver can drop them. The NVENC fields this needs,
 # `NV_ENC_CONFIG_AV1::enableTemporalSVC` and `numTemporalLayers`, first appear
-# in NVENC API 13.0; gst-plugins-bad 1.28.8 bundles the SDK 12.0 header.
+# in NVENC API 13.0; gst-plugins-bad 1.28.9 bundles the SDK 12.0 header.
 #
 # The patch therefore replaces `nvEncodeAPI.h` with the SDK 13.0 header from
 # FFmpeg's nv-codec-headers, tag n13.0.19.0, commit
@@ -33,7 +33,7 @@
 # The property value itself is never changed. With temporal layers the
 # encoder uses no B-frames.
 #
-# Applies to: gst-plugins-bad of the GStreamer monorepo 1.28.8, every target
+# Applies to: gst-plugins-bad of the GStreamer monorepo 1.28.9, every target
 # (nvcodec is built on Linux and Windows).
 # License: LGPL-2.1-or-later for the GStreamer files, MIT for nvEncodeAPI.h
 # (patches/README.md).
