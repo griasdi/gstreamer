@@ -1,4 +1,1 @@
 /target
-# The runner's cache and scratch directories (.zeughaus-ci/).
-/.ci-cache
-/.ci-work.*

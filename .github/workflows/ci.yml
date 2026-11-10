@@ -1,0 +1,256 @@
+# The gate of the recipe for every push to main, and for a release tag also
+# the four targets, built natively on GitHub's hosted runners, and the GitHub
+# release made of their archives.
+#
+# A tag `v<id>` runs the workflow of its own commit. `workflow_dispatch` builds
+# and publishes an existing tag with the workflow of the branch it is started
+# from, for a tag whose commit has no workflow or whose run is to be repeated;
+# the tag itself is never moved.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build and publish (v<id>)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  # The release tag of this run: the pushed tag, the dispatched one, or none
+  # for a push to main.
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || (github.ref_type == 'tag' && github.ref_name || '') }}
+  # cargo runs rustc in each dependency's directory, and rustup honours a
+  # `rust-toolchain.toml` it finds there; the build uses the stable toolchain
+  # it installed, whatever a dependency asks for.
+  RUSTUP_TOOLCHAIN: stable
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  # Formatting, clippy with warnings denied and the tests. A tag first checks
+  # that it names the release id of its commit, because the release is named
+  # after it.
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+          persist-credentials: false
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal -c clippy -c rustfmt
+      - name: Tag names the release id
+        if: env.TAG != ''
+        run: cargo run --release --quiet -- check-tag "$TAG"
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  # The runtime and link files of a target and their source (`dist`), then the
+  # bench: a codec that fails fails the job.
+  build:
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+            uv: uv-x86_64-unknown-linux-gnu.tar.gz
+            uv_sha256: 9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            uv: uv-aarch64-unknown-linux-gnu.tar.gz
+            uv_sha256: 6524bd338177ed50d035d39354e12545e993bbeba2ecbddf0480c5b3a81d313f
+          - target: x86_64-pc-windows-msvc
+            runner: windows-2025
+            uv: uv-x86_64-pc-windows-msvc.zip
+            uv_sha256: 75d05de6762778c31ee183398de7dd15093fad0ed90b1f236d8205ea5ec00c90
+          - target: aarch64-apple-darwin
+            runner: macos-15
+            uv: uv-aarch64-apple-darwin.tar.gz
+            uv_sha256: 50487ae565ccd96e499056b4674d438f4c53170202617b4c759defe0c6a1b544
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 340
+    env:
+      UV_VERSION: "0.12.23"
+      UV_ASSET: ${{ matrix.uv }}
+      UV_SHA256: ${{ matrix.uv_sha256 }}
+      TARGET: ${{ matrix.target }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # The GStreamer monorepo's paths are deep; git on Windows needs this to
+      # check out and patch them.
+      - name: Long paths for git
+        if: runner.os == 'Windows'
+        run: git config --global core.longpaths true
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+          persist-credentials: false
+      - name: Rust toolchain
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl -fsSL --proto '=https' --tlsv1.2 https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup toolchain install stable --profile minimal
+      - name: Tag names the release id
+        run: cargo run --release --quiet -- check-tag "$TAG"
+      # What the Linux build needs from the system: the C and C++ compiler and
+      # make, pkg-config, flex and bison, and the development packages of what
+      # the plugins link dynamically (ximagesrc: X11, Xext, Xfixes, Xdamage;
+      # alsa: libasound).
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config flex bison \
+            libasound2-dev libx11-dev libxext-dev libxfixes-dev libxdamage-dev
+      # flex and bison come with the Xcode command line tools (GStreamer's
+      # `macos-bison-binary` wrap supplies a newer bison); pkgconf from Homebrew.
+      - name: macOS build dependencies
+        if: runner.os == 'macOS'
+        run: brew list pkgconf >/dev/null 2>&1 || brew install pkgconf
+      # uv runs the Python, meson, ninja and cmake of the build: a fixed
+      # release, checked against its SHA-256. It goes to the runner's temporary
+      # directory, outside the checkout, whose untracked files `dist` puts
+      # into the source archive.
+      - name: uv
+        if: runner.os != 'Windows'
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$UV_ASSET" \
+            "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$UV_ASSET"
+          echo "$UV_SHA256  $RUNNER_TEMP/$UV_ASSET" | shasum -a 256 -c -
+          mkdir "$RUNNER_TEMP/uv"
+          tar -xzf "$RUNNER_TEMP/$UV_ASSET" -C "$RUNNER_TEMP/uv" --strip-components=1
+          echo "$RUNNER_TEMP/uv" >> "$GITHUB_PATH"
+      - name: uv
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP $env:UV_ASSET
+          curl.exe -fsSL --retry 3 -o $zip "https://github.com/astral-sh/uv/releases/download/$env:UV_VERSION/$env:UV_ASSET"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne $env:UV_SHA256) { throw "hash mismatch for ${env:UV_ASSET}: $hash" }
+          $uv = Join-Path $env:RUNNER_TEMP 'uv'
+          Expand-Archive -Path $zip -DestinationPath $uv
+          Add-Content -Path $env:GITHUB_PATH -Value $uv
+      - name: dist and bench
+        if: runner.os != 'Windows'
+        run: |
+          cargo run --release -- dist --target "$TARGET" --out "$RUNNER_TEMP/out"
+          cargo run --release -- bench --target "$TARGET"
+      # PowerShell, not Git's bash: its `/usr/bin` (`link`, `pkg-config`, ...)
+      # stays off the build's PATH.
+      - name: dist and bench
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run --release -- dist --target $env:TARGET --out (Join-Path $env:RUNNER_TEMP 'out')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo run --release -- bench --target $env:TARGET
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gstreamer-${{ matrix.target }}
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  # The GitHub release of the tag: the archives of every target and SHA256SUMS
+  # over the eight files. The release id is the tag without its `v`; a target
+  # that built another id fails this job, because its files are missing. A
+  # rerun replaces the release; the tag stays.
+  release:
+    needs: [check, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: gstreamer-*
+          path: ${{ runner.temp }}/artifacts
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGETS: x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-pc-windows-msvc aarch64-apple-darwin
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$ ]]; then
+            echo "tag $TAG is not a release id (v<GStreamer version>-<recipe revision>)" >&2
+            exit 1
+          fi
+          R=${TAG#v}
+          inputs=$RUNNER_TEMP/artifacts
+          release=$RUNNER_TEMP/release
+          mkdir "$release"
+
+          # Exactly the two files of this release id per target; any other
+          # file of a target is an error.
+          names=()
+          for triple in $TARGETS; do
+            dir=$inputs/gstreamer-$triple
+            if [ ! -d "$dir" ]; then
+              echo "no artifacts for $triple" >&2
+              exit 1
+            fi
+            for name in "gstreamer-$R-$triple.tar.gz" "gstreamer-$R-$triple-source.tar.gz"; do
+              if [ ! -f "$dir/$name" ]; then
+                echo "$triple has no $name" >&2
+                exit 1
+              fi
+              mv "$dir/$name" "$release/$name"
+              names+=("$name")
+            done
+            if [ -n "$(ls -A "$dir")" ]; then
+              echo "$triple has files besides its two files of $R:" >&2
+              ls -A "$dir" >&2
+              exit 1
+            fi
+          done
+
+          # The checksums of the eight files, sorted by name; the list does
+          # not name itself.
+          (cd "$release" && sha256sum -- "${names[@]}" | sort -k2,2 > SHA256SUMS)
+
+          sha=$(git rev-parse HEAD)
+          gst=${R%-*}
+          rev=${R##*-}
+          {
+            printf 'GStreamer %s for griasdi, release `%s` (recipe revision %s).\n\n' "$gst" "$R" "$rev"
+            printf 'Built by the recipe at this tag, from commit `%s`. For each target there are two files:\n\n' "$sha"
+            printf -- '- `gstreamer-%s-<target>.tar.gz`: the runtime (what goes into griasdi'"'"'s installation) and the link files (pkg-config files and libraries for building griasdi) built for the target.\n' "$R"
+            printf -- '- `gstreamer-%s-<target>-source.tar.gz`: the source those libraries were built from.\n\n' "$R"
+            printf 'Targets: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu, x86_64-pc-windows-msvc, aarch64-apple-darwin.\n\n'
+            printf 'How the recipe builds these and how to use them: [README.md](https://github.com/%s/blob/%s/README.md).\n\n' "$GITHUB_REPOSITORY" "$TAG"
+            printf 'SHA256SUMS:\n\n```\n'
+            cat "$release/SHA256SUMS"
+            printf '```\n'
+          } > "$RUNNER_TEMP/notes.md"
+
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete "$TAG" -R "$GITHUB_REPOSITORY" --yes
+          fi
+          gh release create "$TAG" -R "$GITHUB_REPOSITORY" --verify-tag \
+            --title "GStreamer $R for griasdi" --notes-file "$RUNNER_TEMP/notes.md" \
+            "$release"/*

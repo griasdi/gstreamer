@@ -153,10 +153,11 @@ nasm.us, ariadne.space and PyPI, and `git` and `curl`:
 - Linux: a C and C++ compiler and `make` (`build-essential`), `flex`, `bison`,
   `pkg-config`, and the development packages of what the plugins link
   dynamically: `libasound2-dev`, `libx11-dev`, `libxext-dev`, `libxfixes-dev`,
-  `libxdamage-dev` (Debian and Ubuntu names). `.zeughaus-ci/ubuntu24.Containerfile`
-  is such a machine. Building `aarch64-unknown-linux-gnu` on x86_64 is a cross
-  build with `aarch64-linux-gnu-gcc` and the arm64 development packages, after
-  the host's prefix (the GLib code generators come from it).
+  `libxdamage-dev` (Debian and Ubuntu names); the `build` job of
+  `.github/workflows/ci.yml` installs exactly these on Ubuntu 24.04. Building
+  `aarch64-unknown-linux-gnu` on x86_64 is a cross build with
+  `aarch64-linux-gnu-gcc` and the arm64 development packages, after the host's
+  prefix (the GLib code generators come from it).
 - macOS: the Xcode command line tools (`otool` and `install_name_tool` relocate
   the runtime), `flex`, `bison` and `pkgconf` (`brew install flex bison
   pkgconf`).
@@ -187,12 +188,14 @@ archive: tracked files and untracked ones that are not ignored.
 3. Commit and push, then tag and push the tag:
    `git tag v<id> && git push origin v<id>`. The CI refuses a tag that is not `v`
    plus the id of the commit it is on.
-4. The tag builds the four targets natively (`.zeughaus-ci/`: `linux-amd64` and
-   `linux-arm64` in the `ubuntu24` image, `windows-amd64` on the Windows VM,
-   `darwin-arm64` on atik's host), each with `dist`. The `release` job then
-   creates the GitHub release `v<id>` with all eight archives and
+4. The tag builds the four targets natively on GitHub's hosted runners
+   (`.github/workflows/ci.yml`: `ubuntu-24.04`, `ubuntu-24.04-arm`,
+   `windows-2025`, `macos-15`), each with `dist` and `bench`. The `release`
+   job then creates the GitHub release `v<id>` with all eight archives and
    `SHA256SUMS`; for a tag that already has a release it replaces the release
-   with the new build.
+   with the new build. The workflow can also be started by hand
+   (`gh workflow run ci.yml -f tag=v<id>`) for a tag that exists already: it
+   builds the tag's commit with the workflow of the branch it is started from.
 5. griasdi moves to the new id and the SHA-256 sums of its release.
 
 A published tag is never moved. Whatever was wrong with a release is fixed by
