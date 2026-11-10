@@ -193,9 +193,11 @@ archive: tracked files and untracked ones that are not ignored.
    `windows-2025`, `macos-15`), each with `dist` and `bench`. The `release`
    job then creates the GitHub release `v<id>` with all eight archives and
    `SHA256SUMS`; for a tag that already has a release it replaces the release
-   with the new build. The workflow can also be started by hand
-   (`gh workflow run ci.yml -f tag=v<id>`) for a tag that exists already: it
-   builds the tag's commit with the workflow of the branch it is started from.
+   with the new build. The workflow can also be started by hand: `gh workflow
+   run ci.yml -f tag=v<id>` builds and publishes a tag that exists already,
+   with the workflow of the branch it is started from; `gh workflow run
+   ci.yml` builds the four targets of `main` without a release, a trial before
+   tagging.
 5. griasdi moves to the new id and the SHA-256 sums of its release.
 
 A published tag is never moved. Whatever was wrong with a release is fixed by

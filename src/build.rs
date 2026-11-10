@@ -316,9 +316,13 @@ fn fetch_gstreamer(plan: &Plan, tools: &Tools) -> Result<()> {
             pin_revision(&text, commit).with_context(|| format!("{wrap} has no revision line"))?;
         fs::write(&path, pinned)?;
     }
+    // One at a time: the downloads share meson's `.wraplock`, and on Windows
+    // `msvcrt.locking` gives up after about ten seconds (`OSError: [Errno 36]
+    // Resource deadlock avoided`, meson 1.12.1 `utils/platform.py`) while the
+    // FFmpeg clone holds it.
     run(tools
         .meson()
-        .args(["subprojects", "download"])
+        .args(["subprojects", "download", "--num-processes", "1"])
         .args(GIT_WRAPS.map(|(_, dir, _)| dir))
         .current_dir(src))?;
     for (_, dir, commit) in GIT_WRAPS {
